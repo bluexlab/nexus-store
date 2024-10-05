@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+option go_package = "bluex_payment";
+
+service NexusStore {
+  // API for unstructure data
+  rpc GetDownloadURL(GetDownloadURLRequest) returns (GetDownloadURLResponse) {}
+  rpc UploadFile(UploadFileRequest) returns (UploadFileResponse) {}
+  rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse) {}
+  rpc TagAutoExpire(TagAutoExpireRequest) returns (TagAutoExpireResponse) {}
+  rpc UntagAutoExpire(UntagAutoExpireRequest) returns (UntagAutoExpireResponse) {}  
+
+  // API for both unstructure and semi-structure data
+  rpc AddMetadata(AddMetadataRequest) returns (AddMetadataResponse) {}
+}
+
+message Error {
+  enum ErrorCode {
+    UNKNOWN = 0;
+
+    // X YYY ZZZZZZ
+    // X service type. 1: backend
+    // YYY service prefix [001-999]
+    // ZZZZZZ service defined error code
+
+    NEXUS_STORE_INVALID_PARAMETER  = 1101001001;
+    NEXUS_STORE_EXCEED_SIZE_LIMIT  = 1101001002;
+    NEXUS_STORE_KEY_NOT_EXIST      = 1101001003;
+  }
+}
+
+message MetadataEntry {
+  string key = 1;
+  string value = 2;
+}
+
+
+message GetDownloadURLRequest {
+  string key = 1;
+  int64 live_time = 2;
+}
+
+message GetDownloadURLResponse {
+  Error error = 1;
+  string url = 2;
+}
+
+message UploadFileRequest {
+  string file_name = 1;
+  bytes data = 2;
+  bool auto_expire = 3;
+  repeated MetadataEntry metadata = 4;
+}
+
+message UploadFileResponse {
+  Error error = 1;
+  string key = 2;
+}
+
+message DeleteFileRequest {
+  string key = 1;
+}
+
+message DeleteFileResponse {
+  Error error = 1;
+  string key = 2;
+}
+
+message TagAutoExpireRequest {
+  string key = 1;
+}
+
+message TagAutoExpireResponse {
+  Error error = 1;
+}
+
+message AddMetadataRequest {
+  string key = 1;
+  repeated MetadataEntry new_metadata = 2;
+}
+
+message AddMetadataResponse {
+  Error error = 1;
+}
