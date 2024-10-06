@@ -8,7 +8,7 @@ service NexusStore {
   rpc UploadFile(UploadFileRequest) returns (UploadFileResponse) {}
   rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse) {}
   rpc TagAutoExpire(TagAutoExpireRequest) returns (TagAutoExpireResponse) {}
-  rpc UntagAutoExpire(UntagAutoExpireRequest) returns (UntagAutoExpireResponse) {}  
+  rpc UntagAutoExpire(UntagAutoExpireRequest) returns (UntagAutoExpireResponse) {}
 
   // API for both unstructure and semi-structure data
   rpc AddMetadata(AddMetadataRequest) returns (AddMetadataResponse) {}
@@ -71,6 +71,14 @@ message TagAutoExpireRequest {
 }
 
 message TagAutoExpireResponse {
+  Error error = 1;
+}
+
+message UntagAutoExpireRequest {
+  string key = 1;
+}
+
+message UntagAutoExpireResponse {
   Error error = 1;
 }
 
