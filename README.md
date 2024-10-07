@@ -33,7 +33,7 @@ nexus-store/
 
 1. Install dependencies:
 
-   ```
+   ```bash
    go mod download
    ```
 
@@ -44,17 +44,18 @@ nexus-store/
 
 3. Run database migrations:
 
-   ```
+   ```bash
    go run app/migrate/main.go up
    ```
 
 4. Build and run the server:
-   ```
+
+   ```bash
    make
    ```
 
 ### Running Tests
 
-```
+```bash
 make test
 ```

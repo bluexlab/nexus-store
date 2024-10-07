@@ -4,13 +4,19 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/go-playground/validator"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kelseyhightower/envconfig"
+	"gitlab.com/navyx/nexus/nexus-store/pkg/grpc"
+	nexus "gitlab.com/navyx/nexus/nexus-store/pkg/proto/nexus_store"
+	grpc_grpc "google.golang.org/grpc"
 )
 
 const appName string = "nexus-store"
@@ -58,6 +64,39 @@ func (a *App) Run() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+
+	nexusStoreGrpcListen, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", config.Port))
+	if err != nil {
+		a.logger.Error("Failed to listen to nexus store", "err", err)
+		os.Exit(1)
+	}
+	defer nexusStoreGrpcListen.Close()
+
+	nexusStoreGrpcServer := grpc_grpc.NewServer(
+		grpc_grpc.MaxRecvMsgSize(1024 * 1024 * 10 * 11 / 10),
+	)
+	nexusStoreGrpc := grpc.NewNexusStoreServer()
+	nexus.RegisterNexusStoreServer(nexusStoreGrpcServer, nexusStoreGrpc)
+
+	go func() {
+		a.logger.Info("Nexus store server listening on port", "port", config.Port)
+		err := nexusStoreGrpcServer.Serve(nexusStoreGrpcListen)
+		if err != nil {
+			a.logger.Error("nexusStoreGrpcServer.Serve() returns errors", "err", err)
+			os.Exit(1)
+		}
+	}()
+
+	a._WaitForInteruption()
+
+	a.logger.Info("Shutting down nexus store server......")
+	nexusStoreGrpcServer.GracefulStop()
+}
+
+func (a *App) _WaitForInteruption() {
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
 }
 
 func (a *App) loadConfig() Config {

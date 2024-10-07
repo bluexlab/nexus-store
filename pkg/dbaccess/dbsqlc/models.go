@@ -4,8 +4,23 @@
 
 package dbsqlc
 
+type Metadatas struct {
+	ID        int64
+	ObjectID  int64
+	Key       string
+	Value     string
+	CreatedAt int64
+}
+
 type Migration struct {
 	ID        int64
 	CreatedAt int64
 	Version   int64
+}
+
+type S3Objects struct {
+	ID        int64
+	Bucket    string
+	Key       string
+	CreatedAt int64
 }

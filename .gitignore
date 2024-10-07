@@ -19,6 +19,7 @@ k8s.yaml
 
 # .env files
 .env*
+!.env.example
 
 # Dependency directories (remove the comment below to include it)
 vendor/
@@ -30,3 +31,6 @@ go.work
 coverage.html
 coverage.out
 .mise.toml
+
+# MacOS
+.DS_Store
