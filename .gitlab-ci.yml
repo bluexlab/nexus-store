@@ -14,8 +14,8 @@ include:
 
 variables:
   DOCKER_DRIVER: overlay2
-  REPOSITORY_NAME: maos-core
-  MASTER_REPO_NAMESPACE: "navyx/ai/maos"
+  REPOSITORY_NAME: next-store
+  MASTER_REPO_NAMESPACE: "navyx/nexus/next-store"
 
 workflow:
   rules:
@@ -57,35 +57,34 @@ depscan:
     paths:
       - $CI_PROJECT_DIR/reports/
     when: always
-#
-# kevinj: Docker build is not ready yet
-# build_image:
-#   stage: package
-#   image:
-#     name: $AWS_ECR_REGISTRY/aws-cli-docker
-#     entrypoint: [""]
-#   artifacts:
-#     reports:
-#       dotenv: build.env
-#   script:
-#     - LAST_BUILD=$(git tag -l | grep ^build/ | grep -o -E '[0-9]+$' | sort -n | tail -n1; exit 0)
-#     - if [ "$CI_COMMIT_BRANCH" = "main" -o "$CI_COMMIT_BRANCH" = "master" ]; then BUILD_PREFIX="prod"; CDN_BUCKET='bluex-static-files'; else BUILD_PREFIX=$CI_COMMIT_BRANCH; CDN_BUCKET='bluex-static-files-dev'; fi
-#     - NEXT_BUILD="$BUILD_PREFIX-$((LAST_BUILD + 1))"
-#     - NEW_TAG="build/$NEXT_BUILD"
-#     - echo $CI_COMMIT_BRANCH, $CI_PIPELINE_SOURCE, $LAST_BUILD, $NEW_TAG
-#     - |
-#       curl --request POST --header "PRIVATE-TOKEN: $GITLAB_GROUP_ACCESS_TOKEN" \
-#       --silent --output /dev/null --show-error --fail \
-#       "https://gitlab.com/api/v4/projects/$CI_PROJECT_ID/repository/tags?tag_name=$NEW_TAG&ref=$CI_COMMIT_SHA"
-#     - aws ecr get-login-password | docker login --username AWS --password-stdin $AWS_ECR_REGISTRY
-#     - |
-#       docker build --build-arg BUILDNO=$NEXT_BUILD --build-arg CDN_BUCKET=$CDN_BUCKET --build-arg REV=$(git log -n 1 --pretty=format:'%h') \
-#       --build-arg AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID --build-arg AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY --build-arg AWS_ECR_REGISTRY=$AWS_ECR_REGISTRY \
-#       -t $AWS_ECR_REGISTRY/$REPOSITORY_NAME:$NEXT_BUILD .
-#     - docker push $AWS_ECR_REGISTRY/$REPOSITORY_NAME:$NEXT_BUILD
-#     - if [ "$CI_COMMIT_BRANCH" == "dev" ]; then docker tag $AWS_ECR_REGISTRY/$REPOSITORY_NAME:$NEXT_BUILD $AWS_ECR_REGISTRY/$REPOSITORY_NAME:latest; docker push $AWS_ECR_REGISTRY/$REPOSITORY_NAME:latest; fi
-#     - echo "BUILDNO=$NEXT_BUILD" > build.env
-#     - echo "NEW_TAG=$NEW_TAG" >> build.env
-#     - echo "BUILD_PREFIX=$BUILD_PREFIX" >> build.env
-#   rules:
-#     - if: '$CI_PROJECT_NAMESPACE == $MASTER_REPO_NAMESPACE && $CI_COMMIT_BRANCH =~ /dev|master|main|hotfix/'
+
+build_image:
+  stage: package
+  image:
+    name: $AWS_ECR_REGISTRY/aws-cli-docker
+    entrypoint: [""]
+  artifacts:
+    reports:
+      dotenv: build.env
+  script:
+    - LAST_BUILD=$(git tag -l | grep ^build/ | grep -o -E '[0-9]+$' | sort -n | tail -n1; exit 0)
+    - if [ "$CI_COMMIT_BRANCH" = "main" -o "$CI_COMMIT_BRANCH" = "master" ]; then BUILD_PREFIX="prod"; CDN_BUCKET='bluex-static-files'; else BUILD_PREFIX=$CI_COMMIT_BRANCH; CDN_BUCKET='bluex-static-files-dev'; fi
+    - NEXT_BUILD="$BUILD_PREFIX-$((LAST_BUILD + 1))"
+    - NEW_TAG="build/$NEXT_BUILD"
+    - echo $CI_COMMIT_BRANCH, $CI_PIPELINE_SOURCE, $LAST_BUILD, $NEW_TAG
+    - |
+      curl --request POST --header "PRIVATE-TOKEN: $GITLAB_GROUP_ACCESS_TOKEN" \
+      --silent --output /dev/null --show-error --fail \
+      "https://gitlab.com/api/v4/projects/$CI_PROJECT_ID/repository/tags?tag_name=$NEW_TAG&ref=$CI_COMMIT_SHA"
+    - aws ecr get-login-password | docker login --username AWS --password-stdin $AWS_ECR_REGISTRY
+    - |
+      docker build --build-arg BUILDNO=$NEXT_BUILD --build-arg CDN_BUCKET=$CDN_BUCKET --build-arg REV=$(git log -n 1 --pretty=format:'%h') \
+      --build-arg AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID --build-arg AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY --build-arg AWS_ECR_REGISTRY=$AWS_ECR_REGISTRY \
+      -t $AWS_ECR_REGISTRY/$REPOSITORY_NAME:$NEXT_BUILD .
+    - docker push $AWS_ECR_REGISTRY/$REPOSITORY_NAME:$NEXT_BUILD
+    - if [ "$CI_COMMIT_BRANCH" == "dev" ]; then docker tag $AWS_ECR_REGISTRY/$REPOSITORY_NAME:$NEXT_BUILD $AWS_ECR_REGISTRY/$REPOSITORY_NAME:latest; docker push $AWS_ECR_REGISTRY/$REPOSITORY_NAME:latest; fi
+    - echo "BUILDNO=$NEXT_BUILD" > build.env
+    - echo "NEW_TAG=$NEW_TAG" >> build.env
+    - echo "BUILD_PREFIX=$BUILD_PREFIX" >> build.env
+  rules:
+    - if: "$CI_PROJECT_NAMESPACE == $MASTER_REPO_NAMESPACE && $CI_COMMIT_BRANCH =~ /dev|master|main|hotfix/"

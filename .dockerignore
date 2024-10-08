@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env*
+Dockerfile
+
+vendor/
+bin/
+
+go.work
+.vscode
+coverage.html
+coverage.out

@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	nexusstore "gitlab.com/navyx/nexus/nexus-store"
+	"gitlab.com/navyx/nexus/nexus-store/db"
+	"gitlab.com/navyx/nexus/nexus-store/pkg/migrate"
 )
 
 func main() {
@@ -16,6 +21,13 @@ func main() {
 	}
 
 	logger := initLogger()
+
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		migrateUp(logger)
+		os.Exit(0)
+		return
+	}
+
 	app := &App{logger}
 	app.Run()
 }
@@ -57,6 +69,50 @@ func initLogger() *slog.Logger {
 	slog.SetDefault(logger)
 
 	return logger
+}
+
+func migrateUp(logger *slog.Logger) {
+	logger.Info("Running migrations up")
+	ctx := context.Background()
+
+	var databaseUrl string
+	if databaseUrl = os.Getenv("DATABASE_URL"); databaseUrl == "" {
+		host := os.Getenv("DATABASE_HOST")
+		port := os.Getenv("DATABASE_PORT")
+		user := os.Getenv("DATABASE_USER")
+		password := os.Getenv("DATABASE_PASSWORD")
+		dbName := os.Getenv("DATABASE_NAME")
+
+		if host == "" || port == "" || user == "" || password == "" || dbName == "" {
+			logger.Error("Database connection details are not fully specified in environment variables")
+			os.Exit(1)
+		}
+
+		databaseUrl = fmt.Sprintf("postgres://%s:%s@%s:%s/%s", user, password, host, port, dbName)
+	}
+
+	dbConfig, err := pgxpool.ParseConfig(databaseUrl)
+	if err != nil {
+		logger.Error("Failed to parse connection string", "err", err)
+		os.Exit(1)
+	}
+
+	logger.Info("Connecting to database", "url", databaseUrl)
+
+	pool, err := pgxpool.NewWithConfig(ctx, dbConfig)
+	if err != nil {
+		logger.Error("Failed to connect to database", "err", err)
+		os.Exit(1)
+	}
+
+	defer pool.Close()
+
+	if _, err := migrate.New(pool, migrate.Config{Migrations: db.MigrationFS}).Migrate(ctx, migrate.DirectionUp, &migrate.MigrateOpts{}); err != nil {
+		logger.Error("Failed to migrate database", "error", err.Error())
+		os.Exit(2)
+	}
+
+	logger.Info("maos-core Database migrated")
 }
 
 func unixTimestampHandler(groups []string, a slog.Attr) slog.Attr {

@@ -128,7 +128,7 @@ func migrateUp(logger *slog.Logger, dryRun bool, step int) {
 		os.Exit(2)
 	}
 
-	logger.Info("maos-core Database migrated")
+	logger.Info("Database migrated")
 }
 
 func migrateDown(logger *slog.Logger, dryRun bool, step int) {
@@ -143,7 +143,7 @@ func migrateDown(logger *slog.Logger, dryRun bool, step int) {
 		os.Exit(2)
 	}
 
-	logger.Info("maos-core Database migrated")
+	logger.Info("Database migrated")
 }
 
 func runMigration(ctx context.Context, dataSource dbaccess.DataSource, direction migrate.Direction, step int, dryRun bool) error {
