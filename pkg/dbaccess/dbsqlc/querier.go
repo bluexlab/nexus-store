@@ -6,13 +6,21 @@ package dbsqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
+	DocumentFindById(ctx context.Context, db DBTX, id pgtype.UUID) (*Document, error)
+	DocumentInsert(ctx context.Context, db DBTX, content []byte) (*Document, error)
+	MetadataInsert(ctx context.Context, db DBTX, arg *MetadataInsertParams) (*Metadata, error)
+	MetadataInsertBatch(ctx context.Context, db DBTX, arg *MetadataInsertBatchParams) error
 	MigrationDeleteByVersionMany(ctx context.Context, db DBTX, version []int64) ([]*Migration, error)
 	MigrationGetAll(ctx context.Context, db DBTX) ([]*Migration, error)
 	MigrationInsert(ctx context.Context, db DBTX, version int64) (*Migration, error)
 	MigrationInsertMany(ctx context.Context, db DBTX, version []int64) ([]*Migration, error)
+	S3ObjectFindById(ctx context.Context, db DBTX, id pgtype.UUID) (*S3Object, error)
+	S3ObjectInsert(ctx context.Context, db DBTX, arg *S3ObjectInsertParams) (*S3Object, error)
 	TableExists(ctx context.Context, db DBTX, tableName string) (bool, error)
 }
 

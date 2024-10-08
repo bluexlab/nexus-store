@@ -4,6 +4,9 @@ sql:
     schema: "../../../db/migration"
     queries:
       - migration.sql
+      - metadata.sql
+      - s3_object.sql
+      - document.sql
     gen:
       go:
         package: "dbsqlc"
@@ -16,8 +19,10 @@ sql:
         emit_pointers_for_null_types: true
         emit_interface: true
 
-        # rename:
-        #   actors: "Actor"
+        rename:
+          metadatas: "Metadata"
+          s3_objects: "S3Object"
+          documents: "Document"
 
         overrides:
           - db_type: "pg_catalog.interval"

@@ -4,19 +4,22 @@
 
 package dbsqlc
 
-type Documents struct {
-	ID        int64
+import (
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type Document struct {
+	ID        pgtype.UUID
 	Content   []byte
 	CreatedAt int64
 }
 
-type Metadatas struct {
-	ID         int64
-	ObjectID   *int64
+type Metadata struct {
+	ObjectID   pgtype.UUID
+	DocumentID pgtype.UUID
 	Key        string
 	Value      string
 	CreatedAt  int64
-	DocumentID *int64
 }
 
 type Migration struct {
@@ -25,8 +28,8 @@ type Migration struct {
 	Version   int64
 }
 
-type S3Objects struct {
-	ID        int64
+type S3Object struct {
+	ID        pgtype.UUID
 	Bucket    string
 	Key       string
 	CreatedAt int64

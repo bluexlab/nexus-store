@@ -64,6 +64,7 @@ func (a *App) Run() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+	a.logger.Info("Connected to database", "database", config.DatabaseUrl)
 
 	nexusStoreGrpcListen, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", config.Port))
 	if err != nil {
@@ -75,7 +76,9 @@ func (a *App) Run() {
 	nexusStoreGrpcServer := grpc_grpc.NewServer(
 		grpc_grpc.MaxRecvMsgSize(1024 * 1024 * 10 * 11 / 10),
 	)
-	nexusStoreGrpc := grpc.NewNexusStoreServer()
+	nexusStoreGrpc := grpc.NewNexusStoreServer(
+		grpc.WithDataSource(pool),
+	)
 	nexus.RegisterNexusStoreServer(nexusStoreGrpcServer, nexusStoreGrpc)
 
 	go func() {
