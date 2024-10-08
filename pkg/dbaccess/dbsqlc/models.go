@@ -4,12 +4,19 @@
 
 package dbsqlc
 
-type Metadatas struct {
+type Documents struct {
 	ID        int64
-	ObjectID  int64
-	Key       string
-	Value     string
+	Content   []byte
 	CreatedAt int64
+}
+
+type Metadatas struct {
+	ID         int64
+	ObjectID   *int64
+	Key        string
+	Value      string
+	CreatedAt  int64
+	DocumentID *int64
 }
 
 type Migration struct {
