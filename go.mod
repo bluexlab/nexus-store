@@ -3,7 +3,10 @@ module gitlab.com/navyx/nexus/nexus-store
 go 1.23.1
 
 require (
+	github.com/aws/aws-sdk-go v1.55.5
+	github.com/bluexlab/retry-go v0.0.3
 	github.com/go-playground/validator v9.31.0+incompatible
+	github.com/google/uuid v1.6.0
 	github.com/jackc/pgerrcode v0.0.0-20240316143900-6e2875d9b438
 	github.com/jackc/pgx/v5 v5.7.1
 	github.com/joho/godotenv v1.5.1
@@ -14,17 +17,17 @@ require (
 	go.uber.org/goleak v1.3.0
 	golang.org/x/exp v0.0.0-20241004190924-225e2abe05e6
 	google.golang.org/grpc v1.67.1
-	google.golang.org/protobuf v1.34.2
+	google.golang.org/protobuf v1.35.1
 )
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421 // indirect

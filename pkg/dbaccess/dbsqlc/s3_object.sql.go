@@ -12,7 +12,7 @@ import (
 )
 
 const s3ObjectFindById = `-- name: S3ObjectFindById :one
-SELECT id, bucket, key, created_at
+SELECT id, created_at
 FROM s3_objects
 WHERE id = $1
 `
@@ -20,38 +20,17 @@ WHERE id = $1
 func (q *Queries) S3ObjectFindById(ctx context.Context, db DBTX, id pgtype.UUID) (*S3Object, error) {
 	row := db.QueryRow(ctx, s3ObjectFindById, id)
 	var i S3Object
-	err := row.Scan(
-		&i.ID,
-		&i.Bucket,
-		&i.Key,
-		&i.CreatedAt,
-	)
+	err := row.Scan(&i.ID, &i.CreatedAt)
 	return &i, err
 }
 
 const s3ObjectInsert = `-- name: S3ObjectInsert :one
-INSERT INTO s3_objects (
-    bucket,
-    key
-) VALUES (
-    $1,
-    $2
-) RETURNING id, bucket, key, created_at
+INSERT INTO s3_objects DEFAULT VALUES RETURNING id, created_at
 `
 
-type S3ObjectInsertParams struct {
-	Bucket string
-	Key    string
-}
-
-func (q *Queries) S3ObjectInsert(ctx context.Context, db DBTX, arg *S3ObjectInsertParams) (*S3Object, error) {
-	row := db.QueryRow(ctx, s3ObjectInsert, arg.Bucket, arg.Key)
+func (q *Queries) S3ObjectInsert(ctx context.Context, db DBTX) (*S3Object, error) {
+	row := db.QueryRow(ctx, s3ObjectInsert)
 	var i S3Object
-	err := row.Scan(
-		&i.ID,
-		&i.Bucket,
-		&i.Key,
-		&i.CreatedAt,
-	)
+	err := row.Scan(&i.ID, &i.CreatedAt)
 	return &i, err
 }

@@ -20,7 +20,7 @@ type Querier interface {
 	MigrationInsert(ctx context.Context, db DBTX, version int64) (*Migration, error)
 	MigrationInsertMany(ctx context.Context, db DBTX, version []int64) ([]*Migration, error)
 	S3ObjectFindById(ctx context.Context, db DBTX, id pgtype.UUID) (*S3Object, error)
-	S3ObjectInsert(ctx context.Context, db DBTX, arg *S3ObjectInsertParams) (*S3Object, error)
+	S3ObjectInsert(ctx context.Context, db DBTX) (*S3Object, error)
 	TableExists(ctx context.Context, db DBTX, tableName string) (bool, error)
 }
 

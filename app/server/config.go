@@ -2,6 +2,7 @@ package main
 
 type Config struct {
 	Port             int    `envconfig:"PORT" validate:"required,numeric,min=1,max=65535"`
+	FileS3Bucket     string `envconfig:"FILE_S3_BUCKET" validate:"omitempty"`
 	DatabaseUrl      string `envconfig:"DATABASE_URL" validate:"omitempty,url"`
 	DatabaseHost     string `envconfig:"DATABASE_HOST" validate:"omitempty"`
 	DatabasePort     string `envconfig:"DATABASE_PORT" validate:"omitempty"`

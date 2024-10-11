@@ -1,11 +1,10 @@
+-- For unstructure data
 CREATE TABLE s3_objects (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  bucket TEXT NOT NULL,
-  key TEXT NOT NULL,
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY, -- id is also the key of the object in the S3 bucket
   created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())
 );
-CREATE UNIQUE INDEX idx_s3_objects_bucket_key ON s3_objects(bucket, key);
 
+-- For semi-structure data that is of JSON format
 CREATE TABLE documents (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   content JSONB NOT NULL,

@@ -30,7 +30,5 @@ type Migration struct {
 
 type S3Object struct {
 	ID        pgtype.UUID
-	Bucket    string
-	Key       string
 	CreatedAt int64
 }

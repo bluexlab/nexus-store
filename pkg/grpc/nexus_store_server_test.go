@@ -49,9 +49,7 @@ func TestAddMetadata(t *testing.T) {
 		bundle := setup(t)
 		defer bundle.dbPool.Close()
 
-		objectKey := "test-file.txt"
-		bucket := "test-bucket"
-		s3Object := fixture.InsertS3Object(t, ctx, querier, bundle.dbPool, bucket, objectKey)
+		s3Object := fixture.InsertS3Object(t, ctx, querier, bundle.dbPool)
 
 		id, err := s3Object.ID.Value()
 		require.NoError(t, err)
@@ -132,9 +130,7 @@ func TestAddMetadata(t *testing.T) {
 		bundle := setup(t)
 		defer bundle.dbPool.Close()
 
-		objectKey := "test-file.txt"
-		bucket := "test-bucket"
-		s3Object := fixture.InsertS3Object(t, ctx, querier, bundle.dbPool, bucket, objectKey)
+		s3Object := fixture.InsertS3Object(t, ctx, querier, bundle.dbPool)
 		id, err := s3Object.ID.Value()
 		require.NoError(t, err)
 

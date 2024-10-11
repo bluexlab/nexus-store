@@ -10,6 +10,9 @@ service NexusStore {
   rpc TagAutoExpire(TagAutoExpireRequest) returns (TagAutoExpireResponse) {}
   rpc UntagAutoExpire(UntagAutoExpireRequest) returns (UntagAutoExpireResponse) {}
 
+  // API for semi-structure data
+  rpc UploadDocument(UploadDocumentRequest) returns (UploadDocumentResponse) {}
+
   // API for both unstructure and semi-structure data
   rpc AddMetadata(AddMetadataRequest) returns (AddMetadataResponse) {}
 }
@@ -27,6 +30,8 @@ message Error {
     NEXUS_STORE_EXCEED_SIZE_LIMIT  = 1101001002;
     NEXUS_STORE_KEY_NOT_EXIST      = 1101001003;
   }
+
+  ErrorCode code = 1;
 }
 
 message MetadataEntry {
@@ -89,4 +94,14 @@ message AddMetadataRequest {
 
 message AddMetadataResponse {
   Error error = 1;
+}
+
+message UploadDocumentRequest {
+  string data = 1; // Arbitrary data in valid JSON format
+  repeated MetadataEntry metadata = 2;
+}
+
+message UploadDocumentResponse {
+  Error error = 1;
+  string id = 2;
 }

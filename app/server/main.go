@@ -28,7 +28,7 @@ func main() {
 		return
 	}
 
-	app := &App{logger}
+	app := &App{}
 	app.Run()
 }
 

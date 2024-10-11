@@ -28,6 +28,8 @@ type NexusStoreClient interface {
 	DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*DeleteFileResponse, error)
 	TagAutoExpire(ctx context.Context, in *TagAutoExpireRequest, opts ...grpc.CallOption) (*TagAutoExpireResponse, error)
 	UntagAutoExpire(ctx context.Context, in *UntagAutoExpireRequest, opts ...grpc.CallOption) (*UntagAutoExpireResponse, error)
+	// API for semi-structure data
+	UploadDocument(ctx context.Context, in *UploadDocumentRequest, opts ...grpc.CallOption) (*UploadDocumentResponse, error)
 	// API for both unstructure and semi-structure data
 	AddMetadata(ctx context.Context, in *AddMetadataRequest, opts ...grpc.CallOption) (*AddMetadataResponse, error)
 }
@@ -85,6 +87,15 @@ func (c *nexusStoreClient) UntagAutoExpire(ctx context.Context, in *UntagAutoExp
 	return out, nil
 }
 
+func (c *nexusStoreClient) UploadDocument(ctx context.Context, in *UploadDocumentRequest, opts ...grpc.CallOption) (*UploadDocumentResponse, error) {
+	out := new(UploadDocumentResponse)
+	err := c.cc.Invoke(ctx, "/NexusStore/UploadDocument", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *nexusStoreClient) AddMetadata(ctx context.Context, in *AddMetadataRequest, opts ...grpc.CallOption) (*AddMetadataResponse, error) {
 	out := new(AddMetadataResponse)
 	err := c.cc.Invoke(ctx, "/NexusStore/AddMetadata", in, out, opts...)
@@ -104,6 +115,8 @@ type NexusStoreServer interface {
 	DeleteFile(context.Context, *DeleteFileRequest) (*DeleteFileResponse, error)
 	TagAutoExpire(context.Context, *TagAutoExpireRequest) (*TagAutoExpireResponse, error)
 	UntagAutoExpire(context.Context, *UntagAutoExpireRequest) (*UntagAutoExpireResponse, error)
+	// API for semi-structure data
+	UploadDocument(context.Context, *UploadDocumentRequest) (*UploadDocumentResponse, error)
 	// API for both unstructure and semi-structure data
 	AddMetadata(context.Context, *AddMetadataRequest) (*AddMetadataResponse, error)
 	mustEmbedUnimplementedNexusStoreServer()
@@ -127,6 +140,9 @@ func (UnimplementedNexusStoreServer) TagAutoExpire(context.Context, *TagAutoExpi
 }
 func (UnimplementedNexusStoreServer) UntagAutoExpire(context.Context, *UntagAutoExpireRequest) (*UntagAutoExpireResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UntagAutoExpire not implemented")
+}
+func (UnimplementedNexusStoreServer) UploadDocument(context.Context, *UploadDocumentRequest) (*UploadDocumentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UploadDocument not implemented")
 }
 func (UnimplementedNexusStoreServer) AddMetadata(context.Context, *AddMetadataRequest) (*AddMetadataResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddMetadata not implemented")
@@ -234,6 +250,24 @@ func _NexusStore_UntagAutoExpire_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NexusStore_UploadDocument_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UploadDocumentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NexusStoreServer).UploadDocument(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/NexusStore/UploadDocument",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NexusStoreServer).UploadDocument(ctx, req.(*UploadDocumentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _NexusStore_AddMetadata_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AddMetadataRequest)
 	if err := dec(in); err != nil {
@@ -278,6 +312,10 @@ var NexusStore_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UntagAutoExpire",
 			Handler:    _NexusStore_UntagAutoExpire_Handler,
+		},
+		{
+			MethodName: "UploadDocument",
+			Handler:    _NexusStore_UploadDocument_Handler,
 		},
 		{
 			MethodName: "AddMetadata",
