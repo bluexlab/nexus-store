@@ -158,6 +158,140 @@ func TestUploadDocument(t *testing.T) {
 	})
 }
 
+func TestUploadFile(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	type testBundle struct {
+		server    *_NexusStoreServer
+		dbPool    *pgxpool.Pool
+		s3Storage *storage.S3Storage
+		logger    *slog.Logger
+	}
+
+	setup := func(t *testing.T) *testBundle {
+		t.Helper()
+
+		dbPool := testhelper.TestDB(ctx, t)
+		s3Storage, err := storage.NewS3InMemoryStorage(ctx, "test-bucket")
+		require.NoError(t, err)
+
+		server := NewNexusStoreServer(
+			WithDataSource(dbPool),
+			WithStorage(s3Storage),
+		)
+
+		bundle := &testBundle{
+			server:    server,
+			dbPool:    dbPool,
+			s3Storage: s3Storage,
+			logger:    testhelper.Logger(t),
+		}
+
+		return bundle
+	}
+
+	t.Run("Successful upload file", func(t *testing.T) {
+		t.Parallel()
+
+		bundle := setup(t)
+		defer bundle.dbPool.Close()
+
+		req := &pb.UploadFileRequest{
+			FileName:   "test.txt",
+			Data:       []byte("Test file content"),
+			AutoExpire: true,
+			Metadata: []*pb.MetadataEntry{
+				{Key: "SourceSystem", Value: "Test System"},
+				{Key: "CreatorEmail", Value: "test@example.com"},
+				{Key: "CreatorName", Value: "Test Creator"},
+				{Key: "CustomerEmail", Value: "customer@example.com"},
+				{Key: "CustomerName", Value: "Test Customer"},
+				{Key: "Purpose", Value: "Testing"},
+			},
+		}
+
+		resp, err := bundle.server.UploadFile(ctx, req)
+		require.NoError(t, err)
+		require.NotEmpty(t, resp.Key)
+
+		// Verify S3 storage was used
+		mockS3Client := bundle.s3Storage.Client().(*storage.MockS3Client)
+		require.Len(t, mockS3Client.Objects, 1)
+		require.Equal(t, []byte("Test file content"), mockS3Client.Objects[resp.Key])
+
+		// Verify metadata was stored
+		metadata, err := bundle.s3Storage.GetMetadata(ctx, resp.Key)
+		require.NoError(t, err)
+		require.Equal(t, "Test System", metadata["SourceSystem"])
+		require.Equal(t, "test@example.com", metadata["CreatorEmail"])
+		require.Equal(t, "Test Creator", metadata["CreatorName"])
+		require.Equal(t, "customer@example.com", metadata["CustomerEmail"])
+		require.Equal(t, "Test Customer", metadata["CustomerName"])
+		require.Equal(t, "Testing", metadata["Purpose"])
+		require.Equal(t, "test.txt", metadata["FileName"])
+
+		// Verify auto-expire tag
+		require.Equal(t, map[string]string{storage.TagAutoExpire: "1"}, mockS3Client.Tags[resp.Key])
+	})
+
+	t.Run("Upload file with missing metadata", func(t *testing.T) {
+		t.Parallel()
+
+		bundle := setup(t)
+		defer bundle.dbPool.Close()
+
+		req := &pb.UploadFileRequest{
+			FileName: "test.txt",
+			Data:     []byte("Test file content"),
+			Metadata: []*pb.MetadataEntry{
+				{Key: "SourceSystem", Value: "Test System"},
+				// Missing other required fields
+			},
+		}
+
+		_, err := bundle.server.UploadFile(ctx, req)
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+		require.Contains(t, st.Message(), "Missing required field for metadata")
+
+		// Verify S3 storage was not used
+		require.Empty(t, bundle.s3Storage.Client().(*storage.MockS3Client).Objects)
+	})
+
+	t.Run("Upload file with empty data", func(t *testing.T) {
+		t.Parallel()
+
+		bundle := setup(t)
+		defer bundle.dbPool.Close()
+
+		req := &pb.UploadFileRequest{
+			FileName: "test.txt",
+			Data:     []byte{},
+			Metadata: []*pb.MetadataEntry{
+				{Key: "SourceSystem", Value: "Test System"},
+				{Key: "CreatorEmail", Value: "test@example.com"},
+				{Key: "CreatorName", Value: "Test Creator"},
+				{Key: "CustomerEmail", Value: "customer@example.com"},
+				{Key: "CustomerName", Value: "Test Customer"},
+				{Key: "Purpose", Value: "Testing"},
+			},
+		}
+
+		_, err := bundle.server.UploadFile(ctx, req)
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+		require.Contains(t, st.Message(), "Data is required")
+
+		// Verify S3 storage was not used
+		require.Empty(t, bundle.s3Storage.Client().(*storage.MockS3Client).Objects)
+	})
+}
+
 func TestAddMetadata(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
