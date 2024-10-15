@@ -9,16 +9,154 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
-
 	"gitlab.com/navyx/nexus/nexus-store/pkg/dbaccess"
 	"gitlab.com/navyx/nexus/nexus-store/pkg/dbaccess/dbsqlc"
 	"gitlab.com/navyx/nexus/nexus-store/pkg/internal/fixture"
 	"gitlab.com/navyx/nexus/nexus-store/pkg/internal/testhelper"
 	pb "gitlab.com/navyx/nexus/nexus-store/pkg/proto/nexus_store"
+	"gitlab.com/navyx/nexus/nexus-store/pkg/storage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func TestUploadDocument(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	type testBundle struct {
+		dbPool     *pgxpool.Pool
+		dataSource dbaccess.DataSource
+		logger     *slog.Logger
+		server     *_NexusStoreServer
+		s3Storage  *storage.S3Storage
+	}
+
+	setup := func(t *testing.T) *testBundle {
+		t.Helper()
+
+		dbPool := testhelper.TestDB(ctx, t)
+		s3Storage, err := storage.NewS3InMemoryStorage(ctx, "test-bucket")
+		require.NoError(t, err)
+
+		bundle := &testBundle{
+			dbPool:     dbPool,
+			dataSource: dbPool,
+			logger:     testhelper.Logger(t),
+			s3Storage:  s3Storage,
+		}
+
+		bundle.server = NewNexusStoreServer(
+			WithDataSource(bundle.dataSource),
+			WithStorage(s3Storage),
+		)
+
+		return bundle
+	}
+
+	t.Run("Successful upload document", func(t *testing.T) {
+		t.Parallel()
+
+		bundle := setup(t)
+		defer bundle.dbPool.Close()
+
+		req := &pb.UploadDocumentRequest{
+			Data: `{"test": "content"}`,
+			Metadata: []*pb.MetadataEntry{
+				{Key: "SourceSystem", Value: "Test System"},
+				{Key: "CreatorEmail", Value: "test@example.com"},
+				{Key: "CreatorName", Value: "Test Creator"},
+				{Key: "CustomerEmail", Value: "customer@example.com"},
+				{Key: "CustomerName", Value: "Test Customer"},
+				{Key: "Purpose", Value: "Testing"},
+			},
+		}
+
+		resp, err := bundle.server.UploadDocument(ctx, req)
+		require.NoError(t, err)
+		require.NotEmpty(t, resp.Id)
+
+		// Verify the document was inserted
+		documentUUID, err := uuid.Parse(resp.Id)
+		require.NoError(t, err)
+
+		pgUUID := pgtype.UUID{Bytes: documentUUID, Valid: true}
+		document, err := querier.DocumentFindById(ctx, bundle.dataSource, pgUUID)
+		require.NoError(t, err)
+		require.Equal(t, req.Data, string(document.Content))
+
+		// Verify metadata was inserted
+		recs, err := querier.MetadataFindByDocumentId(ctx, bundle.dataSource, pgUUID)
+		metadata := lo.Reduce(recs, func(agg map[string]string, item *dbsqlc.MetadataFindByDocumentIdRow, _ int) map[string]string {
+			agg[item.Key] = item.Value
+			return agg
+		}, map[string]string{})
+		require.NoError(t, err)
+		require.Len(t, metadata, len(req.Metadata))
+		require.Equal(t, lo.Reduce(req.Metadata, func(agg map[string]string, item *pb.MetadataEntry, _ int) map[string]string {
+			agg[item.Key] = item.Value
+			return agg
+		}, map[string]string{}), metadata)
+
+		// Verify S3 storage was not used
+		require.Empty(t, bundle.s3Storage.Client().(*storage.MockS3Client).Objects)
+	})
+
+	t.Run("Upload document with missing required metadata", func(t *testing.T) {
+		t.Parallel()
+
+		bundle := setup(t)
+		defer bundle.dbPool.Close()
+
+		req := &pb.UploadDocumentRequest{
+			Data: "Test document content",
+			Metadata: []*pb.MetadataEntry{
+				{Key: "SourceSystem", Value: "Test System"},
+				// Missing other required fields
+			},
+		}
+
+		_, err := bundle.server.UploadDocument(ctx, req)
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+		require.Contains(t, st.Message(), "Missing required field for metadata")
+
+		// Verify S3 storage was not used
+		require.Empty(t, bundle.s3Storage.Client().(*storage.MockS3Client).Objects)
+	})
+
+	t.Run("Upload document with empty data", func(t *testing.T) {
+		t.Parallel()
+
+		bundle := setup(t)
+		defer bundle.dbPool.Close()
+
+		req := &pb.UploadDocumentRequest{
+			Data: "",
+			Metadata: []*pb.MetadataEntry{
+				{Key: "SourceSystem", Value: "Test System"},
+				{Key: "CreatorEmail", Value: "test@example.com"},
+				{Key: "CreatorName", Value: "Test Creator"},
+				{Key: "CustomerEmail", Value: "customer@example.com"},
+				{Key: "CustomerName", Value: "Test Customer"},
+				{Key: "Purpose", Value: "Testing"},
+			},
+		}
+
+		_, err := bundle.server.UploadDocument(ctx, req)
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+		require.Contains(t, st.Message(), "Data is required")
+
+		// Verify S3 storage was not used
+		require.Empty(t, bundle.s3Storage.Client().(*storage.MockS3Client).Objects)
+	})
+}
 
 func TestAddMetadata(t *testing.T) {
 	t.Parallel()

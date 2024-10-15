@@ -11,6 +11,35 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const metadataFindByDocumentId = `-- name: MetadataFindByDocumentId :many
+SELECT key, value FROM metadatas WHERE document_id = $1
+`
+
+type MetadataFindByDocumentIdRow struct {
+	Key   string
+	Value string
+}
+
+func (q *Queries) MetadataFindByDocumentId(ctx context.Context, db DBTX, documentID pgtype.UUID) ([]*MetadataFindByDocumentIdRow, error) {
+	rows, err := db.Query(ctx, metadataFindByDocumentId, documentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*MetadataFindByDocumentIdRow
+	for rows.Next() {
+		var i MetadataFindByDocumentIdRow
+		if err := rows.Scan(&i.Key, &i.Value); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const metadataInsert = `-- name: MetadataInsert :one
 INSERT INTO metadatas (
     object_id,

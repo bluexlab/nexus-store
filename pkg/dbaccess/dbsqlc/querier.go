@@ -13,6 +13,7 @@ import (
 type Querier interface {
 	DocumentFindById(ctx context.Context, db DBTX, id pgtype.UUID) (*Document, error)
 	DocumentInsert(ctx context.Context, db DBTX, content []byte) (*Document, error)
+	MetadataFindByDocumentId(ctx context.Context, db DBTX, documentID pgtype.UUID) ([]*MetadataFindByDocumentIdRow, error)
 	MetadataInsert(ctx context.Context, db DBTX, arg *MetadataInsertParams) (*Metadata, error)
 	MetadataInsertBatch(ctx context.Context, db DBTX, arg *MetadataInsertBatchParams) error
 	MigrationDeleteByVersionMany(ctx context.Context, db DBTX, version []int64) ([]*Migration, error)
