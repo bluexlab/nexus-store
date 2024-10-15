@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"gitlab.com/navyx/nexus/nexus-store/pkg/dbaccess"
@@ -31,7 +32,6 @@ var (
 type _NexusStoreServer struct {
 	dataSource dbaccess.DataSource
 	storage    storage.Storage
-	bucket     string
 	nexus.UnimplementedNexusStoreServer
 }
 
@@ -43,10 +43,9 @@ func WithDataSource(dataSource dbaccess.DataSource) NexusStoreServerOption {
 	}
 }
 
-func WithStorage(storage storage.Storage, bucket string) NexusStoreServerOption {
+func WithStorage(storage storage.Storage) NexusStoreServerOption {
 	return func(s *_NexusStoreServer) {
 		s.storage = storage
-		s.bucket = bucket
 	}
 }
 
@@ -66,7 +65,8 @@ func (s *_NexusStoreServer) GetDownloadURL(ctx context.Context, req *pb.GetDownl
 	if err != nil {
 		slog.Error("NexusStoreServer::GetDownloadURL() fails to GetDownloadURL().", "err", err)
 
-		if errors.Is(err, storage.ErrNoSuchKey) {
+		var noSuchKey *types.NoSuchKey
+		if errors.As(err, &noSuchKey) {
 			return &pb.GetDownloadURLResponse{
 				Error: &nexus.Error{
 					Code: nexus.Error_NEXUS_STORE_KEY_NOT_EXIST,
@@ -249,10 +249,10 @@ func (s *_NexusStoreServer) AddMetadata(ctx context.Context, req *pb.AddMetadata
 	return &pb.AddMetadataResponse{}, nil
 }
 
-func convertMetadataEntriesToS3Metadata(entries []*pb.MetadataEntry) map[string]*string {
-	metadata := make(map[string]*string)
+func convertMetadataEntriesToS3Metadata(entries []*pb.MetadataEntry) map[string]string {
+	metadata := make(map[string]string)
 	for _, entry := range entries {
-		metadata[entry.GetKey()] = &entry.Value
+		metadata[entry.GetKey()] = entry.GetValue()
 	}
 	return metadata
 }

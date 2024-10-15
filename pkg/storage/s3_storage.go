@@ -3,23 +3,41 @@ package storage
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/google/uuid"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 )
+
+type S3ClientInterface interface {
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	HeadObject(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
+	DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
+	PutObjectTagging(ctx context.Context, params *s3.PutObjectTaggingInput, optFns ...func(*s3.Options)) (*s3.PutObjectTaggingOutput, error)
+	DeleteObjectTagging(ctx context.Context, params *s3.DeleteObjectTaggingInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectTaggingOutput, error)
+	PutBucketLifecycleConfiguration(ctx context.Context, params *s3.PutBucketLifecycleConfigurationInput, optFns ...func(*s3.Options)) (*s3.PutBucketLifecycleConfigurationOutput, error)
+	DeleteBucketLifecycle(ctx context.Context, params *s3.DeleteBucketLifecycleInput, optFns ...func(*s3.Options)) (*s3.DeleteBucketLifecycleOutput, error)
+	PutBucketCors(ctx context.Context, params *s3.PutBucketCorsInput, optFns ...func(*s3.Options)) (*s3.PutBucketCorsOutput, error)
+}
+
+type S3PresignClientInterface interface {
+	PresignGetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.PresignOptions)) (*v4.PresignedHTTPRequest, error)
+}
 
 // S3Storage is the implementation of storage.Storage based on AWS S3.
 type S3Storage struct {
-	bucket string
-	s3     *s3.S3
+	bucket        string
+	client        S3ClientInterface
+	presignClient S3PresignClientInterface
 }
 
 const (
@@ -29,30 +47,55 @@ const (
 
 // NewS3Storage create S3 implementation for Storage interface
 // The credential is stored in environment variable "AWS_ACCESS_KEY_ID" and "AWS_SECRET_ACCESS_KEY"
-func NewS3Storage(bucket string) (s *S3Storage, err error) {
-	sess, err := session.NewSession()
+func NewS3Storage(ctx context.Context, bucket string) (s *S3Storage, err error) {
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		slog.Error("Fail to create AWS session", "err", err)
-		return
+		slog.Error("Fail to load AWS config", "err", err)
+		return nil, err
 	}
 
-	forcePathStyle := true
-	// disableEndpointHostPrefix := true
-	s3 := s3.New(sess, &aws.Config{
-		S3ForcePathStyle: &forcePathStyle,
-		// DisableEndpointHostPrefix: &disableEndpointHostPrefix,
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.UsePathStyle = true
 	})
+
+	presignClient := s3.NewPresignClient(client)
+
 	s = &S3Storage{
-		bucket: bucket,
-		s3:     s3,
+		bucket:        bucket,
+		client:        client,
+		presignClient: presignClient,
 	}
-	return
+	return s, nil
 }
 
-// GenFileKey generates a file key.
-func GenFileKey(fileName string) string {
-	uuid := uuid.NewString()
-	return fmt.Sprintf("%s/%s", uuid, fileName)
+// NewS3InMemoryStorage creates a new S3Storage implementation that does not interact with AWS S3,
+// used only for testing.
+func NewS3InMemoryStorage(ctx context.Context, bucket string) (s *S3Storage, err error) {
+	mockClient := &MockS3Client{
+		Objects:  make(map[string][]byte),
+		Tags:     make(map[string]map[string]string),
+		Metadata: make(map[string]map[string]string),
+	}
+	mockPresignClient := &MockS3PresignClient{
+		PresignGetObjectFunc: func(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.PresignOptions)) (*v4.PresignedHTTPRequest, error) {
+			if mockClient.Objects[*params.Key] == nil {
+				return nil, &smithy.GenericAPIError{
+					Code:    "NotFound",
+					Message: "Object not found",
+				}
+			}
+			return &v4.PresignedHTTPRequest{
+				URL: "https://mock-presigned-url.com/" + *params.Key,
+			}, nil
+		},
+	}
+
+	s = &S3Storage{
+		bucket:        bucket,
+		client:        mockClient,
+		presignClient: mockPresignClient,
+	}
+	return s, nil
 }
 
 // GetFileName get the file name from a file key.
@@ -61,23 +104,34 @@ func GetFileName(fileKey string) string {
 	return parts[len(parts)-1]
 }
 
+func (s *S3Storage) GetMetadata(ctx context.Context, fileKey string) (map[string]string, error) {
+	getObjInput := &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(fileKey),
+	}
+	result, err := s.client.HeadObject(ctx, getObjInput)
+	if err != nil {
+		return nil, TranslateError(err)
+	}
+	return result.Metadata, nil
+}
+
 // AddDocument adds a document into the storage.
-func (s *S3Storage) AddDocument(ctx context.Context, fileKey string, data []byte, autoExpire bool, metadata map[string]*string) (string, error) {
-	var tag *string
+func (s *S3Storage) AddDocument(ctx context.Context, fileKey string, data []byte, autoExpire bool, metadata map[string]string) (string, error) {
+	var tagging *string
 	if autoExpire {
 		str := fmt.Sprintf("%s=1", TagAutoExpire)
-		tag = &str
+		tagging = &str
 	}
 
-	body := bytes.NewReader(data)
 	putObjInput := &s3.PutObjectInput{
-		Body:     body,
-		Bucket:   &s.bucket,
-		Key:      &fileKey,
-		Tagging:  tag,
+		Body:     bytes.NewReader(data),
+		Bucket:   aws.String(s.bucket),
+		Key:      aws.String(fileKey),
+		Tagging:  tagging,
 		Metadata: metadata,
 	}
-	_, err := s.s3.PutObjectWithContext(ctx, putObjInput)
+	_, err := s.client.PutObject(ctx, putObjInput)
 	if err != nil {
 		slog.Error("Fail to PutObject", "err", err, "bucket", s.bucket, "key", fileKey)
 		return "", err
@@ -86,22 +140,42 @@ func (s *S3Storage) AddDocument(ctx context.Context, fileKey string, data []byte
 	return fileKey, nil
 }
 
+func (s *S3Storage) GetDocument(ctx context.Context, fileKey string) ([]byte, error) {
+	getObjInput := &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(fileKey),
+	}
+	result, err := s.client.GetObject(ctx, getObjInput)
+	if err != nil {
+		return nil, TranslateError(err)
+	}
+	defer result.Body.Close()
+
+	data, err := io.ReadAll(result.Body)
+	if err != nil {
+		return nil, TranslateError(err)
+	}
+
+	return data, nil
+}
+
 // SetDocumentAutoExpire sets the tag of the document to make to be auto expired or not.
 func (s *S3Storage) SetDocumentAutoExpire(ctx context.Context, fileKey string, autoExpire bool) error {
 	if autoExpire {
-		tag := &s3.Tag{}
-		tag.SetKey(TagAutoExpire)
-		tag.SetValue("1")
-
 		input := &s3.PutObjectTaggingInput{
-			Bucket: &s.bucket,
-			Key:    &fileKey,
-			Tagging: &s3.Tagging{
-				TagSet: []*s3.Tag{tag},
+			Bucket: aws.String(s.bucket),
+			Key:    aws.String(fileKey),
+			Tagging: &types.Tagging{
+				TagSet: []types.Tag{
+					{
+						Key:   aws.String(TagAutoExpire),
+						Value: aws.String("1"),
+					},
+				},
 			},
 		}
 
-		_, err := s.s3.PutObjectTaggingWithContext(ctx, input)
+		_, err := s.client.PutObjectTagging(ctx, input)
 		if err != nil {
 			return TranslateError(err)
 		}
@@ -109,10 +183,10 @@ func (s *S3Storage) SetDocumentAutoExpire(ctx context.Context, fileKey string, a
 	}
 
 	input := &s3.DeleteObjectTaggingInput{
-		Bucket: &s.bucket,
-		Key:    &fileKey,
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(fileKey),
 	}
-	_, err := s.s3.DeleteObjectTaggingWithContext(ctx, input)
+	_, err := s.client.DeleteObjectTagging(ctx, input)
 	if err != nil {
 		return TranslateError(err)
 	}
@@ -121,28 +195,25 @@ func (s *S3Storage) SetDocumentAutoExpire(ctx context.Context, fileKey string, a
 
 // GetDownloadURL returns an URL with expiration duration to download the specified file.
 func (s *S3Storage) GetDownloadURL(ctx context.Context, fileKey string, expire int64) (string, error) {
-	input := &s3.GetObjectInput{
-		Bucket: &s.bucket,
-		Key:    &fileKey,
-	}
-	request, _ := s.s3.GetObjectRequest(input)
-	request.SetContext(ctx)
-	expireDuration := time.Second * time.Duration(expire)
-	url, err := request.Presign(expireDuration)
+	request, err := s.presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(fileKey),
+	}, s3.WithPresignExpires(time.Duration(expire)*time.Second))
+
 	if err != nil {
 		slog.Error("Fail to generate presigned URL", "err", err, "bucket", s.bucket, "key", fileKey)
 		return "", TranslateError(err)
 	}
-	return url, nil
+	return request.URL, nil
 }
 
 // DeleteDocument deletes a document.
 func (s *S3Storage) DeleteDocument(ctx context.Context, fileKey string) error {
 	input := &s3.DeleteObjectInput{
-		Bucket: &s.bucket,
-		Key:    &fileKey,
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(fileKey),
 	}
-	_, err := s.s3.DeleteObject(input)
+	_, err := s.client.DeleteObject(ctx, input)
 	if err != nil {
 		slog.Error("Fail to delete object", "err", err, "bucket", s.bucket, "key", fileKey)
 		return TranslateError(err)
@@ -151,103 +222,80 @@ func (s *S3Storage) DeleteDocument(ctx context.Context, fileKey string) error {
 }
 
 // EnableExpiration sets the expiration day of auto expire documents.
-func (s *S3Storage) EnableExpiration(days int64) (err error) {
-	tag := &s3.Tag{}
-	tag.SetKey(TagAutoExpire)
-	tag.SetValue("1")
-	lifecycleRuleFilter := &s3.LifecycleRuleFilter{}
-	lifecycleRuleFilter.SetTag(tag)
-	expiration := &s3.LifecycleExpiration{}
-	expiration.SetDays(days)
-	lifecycleRule := &s3.LifecycleRule{}
-	lifecycleRule.SetID(TagAutoExpire)
-	lifecycleRule.SetExpiration(expiration)
-	lifecycleRule.SetFilter(lifecycleRuleFilter)
-	lifecycleRule.SetStatus("Enabled")
-
+func (s *S3Storage) EnableExpiration(ctx context.Context, days int32) error {
 	input := &s3.PutBucketLifecycleConfigurationInput{
-		Bucket: &s.bucket,
-		LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
-			Rules: []*s3.LifecycleRule{
-				lifecycleRule,
+		Bucket: aws.String(s.bucket),
+		LifecycleConfiguration: &types.BucketLifecycleConfiguration{
+			Rules: []types.LifecycleRule{
+				{
+					ID:     aws.String(TagAutoExpire),
+					Status: types.ExpirationStatusEnabled,
+					Filter: &types.LifecycleRuleFilter{
+						Tag: &types.Tag{
+							Key:   aws.String(TagAutoExpire),
+							Value: aws.String("1"),
+						},
+					},
+					Expiration: &types.LifecycleExpiration{
+						Days: aws.Int32(days),
+					},
+				},
 			},
 		},
 	}
 
-	_, err = s.s3.PutBucketLifecycleConfiguration(input)
-	if err != nil {
-		return
-	}
-	return
+	_, err := s.client.PutBucketLifecycleConfiguration(ctx, input)
+	return err
 }
 
 // DeleteBucketLifecycle removes all the lifecycle configuration rules in the lifecycle subresource associated with the bucket.
-func (s *S3Storage) DeleteBucketLifecycle() error {
+func (s *S3Storage) DeleteBucketLifecycle(ctx context.Context) error {
 	input := &s3.DeleteBucketLifecycleInput{
-		Bucket: &s.bucket,
+		Bucket: aws.String(s.bucket),
 	}
 
-	result, err := s.s3.DeleteBucketLifecycle(input)
+	_, err := s.client.DeleteBucketLifecycle(ctx, input)
 	if err != nil {
 		return err
 	}
-	slog.Info("S3Storage::DeleteBucketLifecycle() result", "result", result)
+	slog.Info("S3Storage::DeleteBucketLifecycle() completed")
 	return nil
 }
 
 // SetCORS updates CORS setting of the S3 bucket.
-func (s *S3Storage) SetCORS(origins []string, methods []string, maxAgeSeconds int64, headers []string) (err error) {
+func (s *S3Storage) SetCORS(ctx context.Context, origins []string, methods []string, maxAgeSeconds int64, headers []string) error {
 	input := &s3.PutBucketCorsInput{
-		Bucket: &s.bucket,
-		CORSConfiguration: &s3.CORSConfiguration{
-			CORSRules: []*s3.CORSRule{
-				&s3.CORSRule{},
+		Bucket: aws.String(s.bucket),
+		CORSConfiguration: &types.CORSConfiguration{
+			CORSRules: []types.CORSRule{
+				{
+					AllowedOrigins: origins,
+					AllowedMethods: methods,
+					MaxAgeSeconds:  aws.Int32(int32(maxAgeSeconds)),
+					AllowedHeaders: headers,
+				},
 			},
 		},
 	}
 
-	transformStringSlice := func(strs []string) []*string {
-		r := make([]*string, 0)
-		for _, str := range strs {
-			// DON'T REMOVE tmpStr:=str.
-			// Because "str" is the same instance in all iterations of this for loop.
-			tmpStr := str
-			r = append(r, &tmpStr)
-		}
-		return r
-	}
-
-	corsRule := input.CORSConfiguration.CORSRules[0]
-	if len(origins) > 0 {
-		corsRule.AllowedOrigins = transformStringSlice(origins)
-	}
-	if len(methods) > 0 {
-		corsRule.AllowedMethods = transformStringSlice(methods)
-	}
-	if maxAgeSeconds > 0 {
-		corsRule.MaxAgeSeconds = &maxAgeSeconds
-	}
-	if len(headers) > 0 {
-		corsRule.AllowedHeaders = transformStringSlice(headers)
-	}
-
-	_, err = s.s3.PutBucketCors(input)
+	_, err := s.client.PutBucketCors(ctx, input)
 	if err != nil {
 		slog.Error("Fail to PutBucketCors", "err", err, "bucket", s.bucket)
-		return
+		return err
 	}
 
-	return
+	return nil
 }
 
 func (s *S3Storage) GetBucket() string {
 	return s.bucket
 }
 
+// Client returns the S3 client. for testing only.
+func (s *S3Storage) Client() S3ClientInterface {
+	return s.client
+}
+
 func TranslateError(err error) error {
-	var awsError awserr.Error
-	if errors.As(err, &awsError) && awsError.Code() == s3.ErrCodeNoSuchKey {
-		return ErrNoSuchKey
-	}
 	return err
 }

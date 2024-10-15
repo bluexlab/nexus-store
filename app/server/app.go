@@ -74,7 +74,7 @@ func (a *App) Run() {
 	defer nexusStoreGrpcListen.Close()
 
 	var s3Storage *storage.S3Storage
-	s3Storage, err = storage.NewS3Storage(config.FileS3Bucket)
+	s3Storage, err = storage.NewS3Storage(ctx, config.FileS3Bucket)
 	if err != nil {
 		slog.Error("Fail to create S3Storage", "err", err)
 		os.Exit(1)
@@ -84,12 +84,12 @@ func (a *App) Run() {
 
 	err = r.Do(
 		func() error {
-			err = s3Storage.SetCORS([]string{"*"}, []string{"GET", "HEAD"}, 3000, []string{"Authorization"})
+			err = s3Storage.SetCORS(ctx, []string{"*"}, []string{"GET", "HEAD"}, 3000, []string{"Authorization"})
 			if err != nil {
 				return fmt.Errorf("fail to call S3Storage.SetCORS. %w", err)
 			}
 			// err = s3Storage.EnableExpiration(1) // Uncomment this line to enable auto_expire
-			err = s3Storage.DeleteBucketLifecycle() // Remove all lifecycle rules to disable auto_expire
+			err = s3Storage.DeleteBucketLifecycle(ctx) // Remove all lifecycle rules to disable auto_expire
 			if err != nil {
 				return fmt.Errorf("fail to call S3Storage.EnableExpiration. %w", err)
 			}
@@ -106,7 +106,7 @@ func (a *App) Run() {
 	)
 	nexusStoreGrpc := grpc.NewNexusStoreServer(
 		grpc.WithDataSource(pool),
-		grpc.WithStorage(s3Storage, config.FileS3Bucket),
+		grpc.WithStorage(s3Storage),
 	)
 	nexus.RegisterNexusStoreServer(nexusStoreGrpcServer, nexusStoreGrpc)
 
