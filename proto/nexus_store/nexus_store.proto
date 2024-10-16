@@ -1,20 +1,56 @@
 syntax = "proto3";
 
-option go_package = "bluex_payment";
+import "google/api/annotations.proto";
+
+option go_package = "nexus_store";
 
 service NexusStore {
   // API for unstructure data
-  rpc GetDownloadURL(GetDownloadURLRequest) returns (GetDownloadURLResponse) {}
-  rpc UploadFile(UploadFileRequest) returns (UploadFileResponse) {}
-  rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse) {}
-  rpc TagAutoExpire(TagAutoExpireRequest) returns (TagAutoExpireResponse) {}
-  rpc UntagAutoExpire(UntagAutoExpireRequest) returns (UntagAutoExpireResponse) {}
+  rpc GetDownloadURL(GetDownloadURLRequest) returns (GetDownloadURLResponse) {
+    option (google.api.http) = {
+      get: "/v1/store/get-download-url"
+    };
+  }
+  rpc UploadFile(UploadFileRequest) returns (UploadFileResponse) {
+    option (google.api.http) = {
+      post: "/v1/store/upload-file"
+    };
+  }
+  rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse) {
+    option (google.api.http) = {
+      delete: "/v1/store/delete-file"
+    };
+  }
+  rpc TagAutoExpire(TagAutoExpireRequest) returns (TagAutoExpireResponse) {
+    option (google.api.http) = {
+      post: "/v1/store/tag-auto-expire"
+    };
+  }
+  rpc UntagAutoExpire(UntagAutoExpireRequest) returns (UntagAutoExpireResponse) {
+    option (google.api.http) = {
+      post: "/v1/store/untag-auto-expire"
+    };
+  }
 
   // API for semi-structure data
-  rpc UploadDocument(UploadDocumentRequest) returns (UploadDocumentResponse) {}
+  rpc UploadDocument(UploadDocumentRequest) returns (UploadDocumentResponse) {
+    option (google.api.http) = {
+      post: "/v1/store/upload-document"
+    };
+  }
 
   // API for both unstructure and semi-structure data
-  rpc AddMetadata(AddMetadataRequest) returns (AddMetadataResponse) {}
+  rpc AddMetadata(AddMetadataRequest) returns (AddMetadataResponse) {
+    option (google.api.http) = {
+      post: "/v1/store/add-metadata"
+    };
+  }
+
+  rpc List(ListRequest) returns (ListResponse) {
+    option (google.api.http) = {
+      get: "/v1/store/list"
+    };
+  }
 }
 
 message Error {
@@ -29,6 +65,8 @@ message Error {
     NEXUS_STORE_INVALID_PARAMETER  = 1101001001;
     NEXUS_STORE_EXCEED_SIZE_LIMIT  = 1101001002;
     NEXUS_STORE_KEY_NOT_EXIST      = 1101001003;
+    NEXUS_STORE_INTERNAL_ERROR     = 1101001004;
+    NEXUS_STORE_QUERY_FAILED      = 1101001005;
   }
 
   ErrorCode code = 1;
@@ -104,4 +142,36 @@ message UploadDocumentRequest {
 message UploadDocumentResponse {
   Error error = 1;
   string id = 2;
+}
+
+message ListRequest {
+  ListFilter filter = 1;
+  bool return_documents = 2;
+}
+
+message ListResponse {
+  Error error = 1;
+  repeated string document_ids = 2;
+  repeated string file_ids = 3;
+  repeated string documents = 4;
+}
+
+message ListFilter {
+  enum Type {
+    UNKNOWN = 0;
+    EQUAL = 1;
+    NOT_EQUAL = 2;
+    CONTAINS = 3;
+    OR_GROUP = 20;
+    AND_GROUP = 21;
+  }
+
+  // which kind of Filter.
+  Type type = 1;
+
+  // sub filters, it's only used in OR_GROUP and AND_GROUP.
+  repeated ListFilter sub_filters = 2;
+
+  // metadata entries, it's only used in METADATA_EQUAL, METADATA_NOT_EQUAL, METADATA_CONTAINS, METADATA_NOT_CONTAINS, METADATA_REGEX.
+  repeated MetadataEntry entries = 3;
 }

@@ -5,14 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/samber/lo"
 	"gitlab.com/navyx/nexus/nexus-store/pkg/dbaccess"
 	"gitlab.com/navyx/nexus/nexus-store/pkg/dbaccess/dbsqlc"
+	"gitlab.com/navyx/nexus/nexus-store/pkg/model"
 	nexus "gitlab.com/navyx/nexus/nexus-store/pkg/proto/nexus_store"
 	pb "gitlab.com/navyx/nexus/nexus-store/pkg/proto/nexus_store"
 	"gitlab.com/navyx/nexus/nexus-store/pkg/storage"
@@ -137,6 +141,10 @@ func (s *_NexusStoreServer) UploadDocument(ctx context.Context, req *pb.UploadDo
 func (s *_NexusStoreServer) UploadFile(ctx context.Context, req *pb.UploadFileRequest) (*pb.UploadFileResponse, error) {
 	slog.Debug("NexusStoreServer::UploadFile() invoked", "FileName", req.GetFileName(), "AutoExpire", req.GetAutoExpire())
 
+	if len(req.GetData()) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "Data is required")
+	}
+
 	metadata := req.GetMetadata()
 	if metadata == nil {
 		metadata = []*pb.MetadataEntry{}
@@ -249,6 +257,81 @@ func (s *_NexusStoreServer) AddMetadata(ctx context.Context, req *pb.AddMetadata
 	return &pb.AddMetadataResponse{}, nil
 }
 
+func (s *_NexusStoreServer) List(ctx context.Context, req *pb.ListRequest) (*pb.ListResponse, error) {
+	slog.Debug("NexusStoreServer::List() invoked", "req", req)
+
+	filter, err := model.CreateListFilter(req.GetFilter())
+	if err != nil {
+		return s.errorResponse(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "fails to create list filter", err)
+	}
+
+	builder, err := filter.SqlQuery()
+	if err != nil {
+		return s.errorResponse(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "fails to create list filter", err)
+	}
+	query := s.buildQuery(builder)
+	slog.Info("NexusStoreServer::List() query", "query", query, "whereArgs", builder.WhereArgs, "havingArgs", builder.HavingArgs)
+
+	args := append(builder.WhereArgs, builder.HavingArgs...)
+	rows, err := s.dataSource.Query(ctx, query, args...)
+	if err != nil {
+		return s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to execute query", err)
+	}
+	defer rows.Close()
+
+	documentIds, objectIds := s.scanRows(rows)
+	slog.Info("NexusStoreServer::List() documentIds", "documentIds", documentIds, "objectIds", objectIds)
+
+	return &pb.ListResponse{
+		DocumentIds: documentIds,
+		FileIds:     objectIds,
+	}, nil
+}
+
+func (s *_NexusStoreServer) errorResponse(code nexus.Error_ErrorCode, msg string, err error) (*pb.ListResponse, error) {
+	slog.Error(fmt.Sprintf("NexusStoreServer::List() %s", msg), "err", err)
+	return &pb.ListResponse{
+		Error: &nexus.Error{
+			Code: code,
+		},
+	}, nil
+}
+
+func (s *_NexusStoreServer) buildQuery(builder *model.SqlQueryBuilder) string {
+	sqlQuery := fmt.Sprintf(
+		"SELECT object_id, document_id FROM metadatas WHERE %s GROUP BY object_id, document_id HAVING %s;",
+		builder.WhereClause,
+		builder.HavingClause,
+	)
+
+	paramCount := 1
+	sqlQuery = regexp.MustCompile(`\?`).ReplaceAllStringFunc(sqlQuery, func(string) string {
+		placeholder := fmt.Sprintf("$%d", paramCount)
+		paramCount++
+		return placeholder
+	})
+	return sqlQuery
+}
+
+func (s *_NexusStoreServer) scanRows(rows pgx.Rows) ([]string, []string) {
+	var documentIds, objectIds []string
+	for rows.Next() {
+		var documentId, objectId *string
+		if err := rows.Scan(&objectId, &documentId); err != nil {
+			slog.Error("NexusStoreServer::List() fails to scan row", "err", err)
+			continue
+		}
+		slog.Info("scan documentId", "documentId", lo.FromPtr(documentId), "objectId", lo.FromPtr(objectId))
+		if documentId != nil {
+			documentIds = append(documentIds, *documentId)
+		}
+		if objectId != nil {
+			objectIds = append(objectIds, *objectId)
+		}
+	}
+	return documentIds, objectIds
+}
+
 func convertMetadataEntriesToS3Metadata(entries []*pb.MetadataEntry) map[string]string {
 	metadata := make(map[string]string)
 	for _, entry := range entries {
@@ -258,7 +341,7 @@ func convertMetadataEntriesToS3Metadata(entries []*pb.MetadataEntry) map[string]
 }
 
 func (s *_NexusStoreServer) checkMetadataRequiredFields(entries []*pb.MetadataEntry) error {
-	requiredFields := []string{"SourceSystem", "CreatorEmail", "CreatorName", "CustomerEmail", "CustomerName", "Purpose"}
+	requiredFields := []string{"Source", "CreatorEmail", "CustomerName", "Purpose", "ContentType"}
 	for _, field := range requiredFields {
 		found := false
 		for _, entry := range entries {
