@@ -40,6 +40,74 @@ func (q *Queries) MetadataFindByDocumentId(ctx context.Context, db DBTX, documen
 	return items, nil
 }
 
+const metadataFindByDocumentIds = `-- name: MetadataFindByDocumentIds :many
+SELECT
+    document_id,
+    jsonb_object_agg(key, value) AS metadata
+FROM metadatas
+WHERE document_id = ANY($1::uuid[])
+GROUP BY document_id
+`
+
+type MetadataFindByDocumentIdsRow struct {
+	DocumentID pgtype.UUID
+	Metadata   []byte
+}
+
+func (q *Queries) MetadataFindByDocumentIds(ctx context.Context, db DBTX, documentIds []pgtype.UUID) ([]*MetadataFindByDocumentIdsRow, error) {
+	rows, err := db.Query(ctx, metadataFindByDocumentIds, documentIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*MetadataFindByDocumentIdsRow
+	for rows.Next() {
+		var i MetadataFindByDocumentIdsRow
+		if err := rows.Scan(&i.DocumentID, &i.Metadata); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const metadataFindByObjectIds = `-- name: MetadataFindByObjectIds :many
+SELECT
+    object_id,
+    jsonb_object_agg(key, value) AS metadata
+FROM metadatas
+WHERE object_id = ANY($1::uuid[])
+GROUP BY object_id
+`
+
+type MetadataFindByObjectIdsRow struct {
+	ObjectID pgtype.UUID
+	Metadata []byte
+}
+
+func (q *Queries) MetadataFindByObjectIds(ctx context.Context, db DBTX, objectIds []pgtype.UUID) ([]*MetadataFindByObjectIdsRow, error) {
+	rows, err := db.Query(ctx, metadataFindByObjectIds, objectIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*MetadataFindByObjectIdsRow
+	for rows.Next() {
+		var i MetadataFindByObjectIdsRow
+		if err := rows.Scan(&i.ObjectID, &i.Metadata); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const metadataInsert = `-- name: MetadataInsert :one
 INSERT INTO metadatas (
     object_id,

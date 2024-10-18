@@ -20,11 +20,11 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	NexusStore_GetDownloadURL_FullMethodName  = "/NexusStore/GetDownloadURL"
-	NexusStore_UploadFile_FullMethodName      = "/NexusStore/UploadFile"
-	NexusStore_DeleteFile_FullMethodName      = "/NexusStore/DeleteFile"
+	NexusStore_AddFile_FullMethodName         = "/NexusStore/AddFile"
+	NexusStore_RemoveFile_FullMethodName      = "/NexusStore/RemoveFile"
 	NexusStore_TagAutoExpire_FullMethodName   = "/NexusStore/TagAutoExpire"
 	NexusStore_UntagAutoExpire_FullMethodName = "/NexusStore/UntagAutoExpire"
-	NexusStore_UploadDocument_FullMethodName  = "/NexusStore/UploadDocument"
+	NexusStore_AddDocument_FullMethodName     = "/NexusStore/AddDocument"
 	NexusStore_AddMetadata_FullMethodName     = "/NexusStore/AddMetadata"
 	NexusStore_List_FullMethodName            = "/NexusStore/List"
 )
@@ -35,12 +35,12 @@ const (
 type NexusStoreClient interface {
 	// API for unstructure data
 	GetDownloadURL(ctx context.Context, in *GetDownloadURLRequest, opts ...grpc.CallOption) (*GetDownloadURLResponse, error)
-	UploadFile(ctx context.Context, in *UploadFileRequest, opts ...grpc.CallOption) (*UploadFileResponse, error)
-	DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*DeleteFileResponse, error)
+	AddFile(ctx context.Context, in *AddFileRequest, opts ...grpc.CallOption) (*AddFileResponse, error)
+	RemoveFile(ctx context.Context, in *RemoveFileRequest, opts ...grpc.CallOption) (*RemoveFileResponse, error)
 	TagAutoExpire(ctx context.Context, in *TagAutoExpireRequest, opts ...grpc.CallOption) (*TagAutoExpireResponse, error)
 	UntagAutoExpire(ctx context.Context, in *UntagAutoExpireRequest, opts ...grpc.CallOption) (*UntagAutoExpireResponse, error)
 	// API for semi-structure data
-	UploadDocument(ctx context.Context, in *UploadDocumentRequest, opts ...grpc.CallOption) (*UploadDocumentResponse, error)
+	AddDocument(ctx context.Context, in *AddDocumentRequest, opts ...grpc.CallOption) (*AddDocumentResponse, error)
 	// API for both unstructure and semi-structure data
 	AddMetadata(ctx context.Context, in *AddMetadataRequest, opts ...grpc.CallOption) (*AddMetadataResponse, error)
 	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
@@ -64,20 +64,20 @@ func (c *nexusStoreClient) GetDownloadURL(ctx context.Context, in *GetDownloadUR
 	return out, nil
 }
 
-func (c *nexusStoreClient) UploadFile(ctx context.Context, in *UploadFileRequest, opts ...grpc.CallOption) (*UploadFileResponse, error) {
+func (c *nexusStoreClient) AddFile(ctx context.Context, in *AddFileRequest, opts ...grpc.CallOption) (*AddFileResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UploadFileResponse)
-	err := c.cc.Invoke(ctx, NexusStore_UploadFile_FullMethodName, in, out, cOpts...)
+	out := new(AddFileResponse)
+	err := c.cc.Invoke(ctx, NexusStore_AddFile_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *nexusStoreClient) DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*DeleteFileResponse, error) {
+func (c *nexusStoreClient) RemoveFile(ctx context.Context, in *RemoveFileRequest, opts ...grpc.CallOption) (*RemoveFileResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteFileResponse)
-	err := c.cc.Invoke(ctx, NexusStore_DeleteFile_FullMethodName, in, out, cOpts...)
+	out := new(RemoveFileResponse)
+	err := c.cc.Invoke(ctx, NexusStore_RemoveFile_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -104,10 +104,10 @@ func (c *nexusStoreClient) UntagAutoExpire(ctx context.Context, in *UntagAutoExp
 	return out, nil
 }
 
-func (c *nexusStoreClient) UploadDocument(ctx context.Context, in *UploadDocumentRequest, opts ...grpc.CallOption) (*UploadDocumentResponse, error) {
+func (c *nexusStoreClient) AddDocument(ctx context.Context, in *AddDocumentRequest, opts ...grpc.CallOption) (*AddDocumentResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UploadDocumentResponse)
-	err := c.cc.Invoke(ctx, NexusStore_UploadDocument_FullMethodName, in, out, cOpts...)
+	out := new(AddDocumentResponse)
+	err := c.cc.Invoke(ctx, NexusStore_AddDocument_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -140,12 +140,12 @@ func (c *nexusStoreClient) List(ctx context.Context, in *ListRequest, opts ...gr
 type NexusStoreServer interface {
 	// API for unstructure data
 	GetDownloadURL(context.Context, *GetDownloadURLRequest) (*GetDownloadURLResponse, error)
-	UploadFile(context.Context, *UploadFileRequest) (*UploadFileResponse, error)
-	DeleteFile(context.Context, *DeleteFileRequest) (*DeleteFileResponse, error)
+	AddFile(context.Context, *AddFileRequest) (*AddFileResponse, error)
+	RemoveFile(context.Context, *RemoveFileRequest) (*RemoveFileResponse, error)
 	TagAutoExpire(context.Context, *TagAutoExpireRequest) (*TagAutoExpireResponse, error)
 	UntagAutoExpire(context.Context, *UntagAutoExpireRequest) (*UntagAutoExpireResponse, error)
 	// API for semi-structure data
-	UploadDocument(context.Context, *UploadDocumentRequest) (*UploadDocumentResponse, error)
+	AddDocument(context.Context, *AddDocumentRequest) (*AddDocumentResponse, error)
 	// API for both unstructure and semi-structure data
 	AddMetadata(context.Context, *AddMetadataRequest) (*AddMetadataResponse, error)
 	List(context.Context, *ListRequest) (*ListResponse, error)
@@ -162,11 +162,11 @@ type UnimplementedNexusStoreServer struct{}
 func (UnimplementedNexusStoreServer) GetDownloadURL(context.Context, *GetDownloadURLRequest) (*GetDownloadURLResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetDownloadURL not implemented")
 }
-func (UnimplementedNexusStoreServer) UploadFile(context.Context, *UploadFileRequest) (*UploadFileResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UploadFile not implemented")
+func (UnimplementedNexusStoreServer) AddFile(context.Context, *AddFileRequest) (*AddFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddFile not implemented")
 }
-func (UnimplementedNexusStoreServer) DeleteFile(context.Context, *DeleteFileRequest) (*DeleteFileResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method DeleteFile not implemented")
+func (UnimplementedNexusStoreServer) RemoveFile(context.Context, *RemoveFileRequest) (*RemoveFileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveFile not implemented")
 }
 func (UnimplementedNexusStoreServer) TagAutoExpire(context.Context, *TagAutoExpireRequest) (*TagAutoExpireResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TagAutoExpire not implemented")
@@ -174,8 +174,8 @@ func (UnimplementedNexusStoreServer) TagAutoExpire(context.Context, *TagAutoExpi
 func (UnimplementedNexusStoreServer) UntagAutoExpire(context.Context, *UntagAutoExpireRequest) (*UntagAutoExpireResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UntagAutoExpire not implemented")
 }
-func (UnimplementedNexusStoreServer) UploadDocument(context.Context, *UploadDocumentRequest) (*UploadDocumentResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UploadDocument not implemented")
+func (UnimplementedNexusStoreServer) AddDocument(context.Context, *AddDocumentRequest) (*AddDocumentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddDocument not implemented")
 }
 func (UnimplementedNexusStoreServer) AddMetadata(context.Context, *AddMetadataRequest) (*AddMetadataResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddMetadata not implemented")
@@ -222,38 +222,38 @@ func _NexusStore_GetDownloadURL_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
-func _NexusStore_UploadFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UploadFileRequest)
+func _NexusStore_AddFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddFileRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(NexusStoreServer).UploadFile(ctx, in)
+		return srv.(NexusStoreServer).AddFile(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: NexusStore_UploadFile_FullMethodName,
+		FullMethod: NexusStore_AddFile_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NexusStoreServer).UploadFile(ctx, req.(*UploadFileRequest))
+		return srv.(NexusStoreServer).AddFile(ctx, req.(*AddFileRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _NexusStore_DeleteFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteFileRequest)
+func _NexusStore_RemoveFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveFileRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(NexusStoreServer).DeleteFile(ctx, in)
+		return srv.(NexusStoreServer).RemoveFile(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: NexusStore_DeleteFile_FullMethodName,
+		FullMethod: NexusStore_RemoveFile_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NexusStoreServer).DeleteFile(ctx, req.(*DeleteFileRequest))
+		return srv.(NexusStoreServer).RemoveFile(ctx, req.(*RemoveFileRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -294,20 +294,20 @@ func _NexusStore_UntagAutoExpire_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
-func _NexusStore_UploadDocument_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UploadDocumentRequest)
+func _NexusStore_AddDocument_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddDocumentRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(NexusStoreServer).UploadDocument(ctx, in)
+		return srv.(NexusStoreServer).AddDocument(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: NexusStore_UploadDocument_FullMethodName,
+		FullMethod: NexusStore_AddDocument_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NexusStoreServer).UploadDocument(ctx, req.(*UploadDocumentRequest))
+		return srv.(NexusStoreServer).AddDocument(ctx, req.(*AddDocumentRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -360,12 +360,12 @@ var NexusStore_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _NexusStore_GetDownloadURL_Handler,
 		},
 		{
-			MethodName: "UploadFile",
-			Handler:    _NexusStore_UploadFile_Handler,
+			MethodName: "AddFile",
+			Handler:    _NexusStore_AddFile_Handler,
 		},
 		{
-			MethodName: "DeleteFile",
-			Handler:    _NexusStore_DeleteFile_Handler,
+			MethodName: "RemoveFile",
+			Handler:    _NexusStore_RemoveFile_Handler,
 		},
 		{
 			MethodName: "TagAutoExpire",
@@ -376,8 +376,8 @@ var NexusStore_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _NexusStore_UntagAutoExpire_Handler,
 		},
 		{
-			MethodName: "UploadDocument",
-			Handler:    _NexusStore_UploadDocument_Handler,
+			MethodName: "AddDocument",
+			Handler:    _NexusStore_AddDocument_Handler,
 		},
 		{
 			MethodName: "AddMetadata",

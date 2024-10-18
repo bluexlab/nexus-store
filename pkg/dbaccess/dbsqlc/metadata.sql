@@ -20,3 +20,19 @@ ON CONFLICT (object_id, document_id, key, value) DO NOTHING;
 
 -- name: MetadataFindByDocumentId :many
 SELECT key, value FROM metadatas WHERE document_id = @document_id;
+
+-- name: MetadataFindByDocumentIds :many
+SELECT
+    document_id,
+    jsonb_object_agg(key, value) AS metadata
+FROM metadatas
+WHERE document_id = ANY(@document_ids::uuid[])
+GROUP BY document_id;
+
+-- name: MetadataFindByObjectIds :many
+SELECT
+    object_id,
+    jsonb_object_agg(key, value) AS metadata
+FROM metadatas
+WHERE object_id = ANY(@object_ids::uuid[])
+GROUP BY object_id;

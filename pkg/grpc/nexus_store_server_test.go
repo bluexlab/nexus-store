@@ -61,7 +61,7 @@ func TestUploadDocument(t *testing.T) {
 
 		bundle := setup(t)
 
-		req := &pb.UploadDocumentRequest{
+		req := &pb.AddDocumentRequest{
 			Data: `{"test": "content"}`,
 			Metadata: map[string]string{
 				"Source":       "Test System",
@@ -72,7 +72,7 @@ func TestUploadDocument(t *testing.T) {
 			},
 		}
 
-		resp, err := bundle.server.UploadDocument(ctx, req)
+		resp, err := bundle.server.AddDocument(ctx, req)
 		require.NoError(t, err)
 		require.NotEmpty(t, resp.Id)
 
@@ -103,7 +103,7 @@ func TestUploadDocument(t *testing.T) {
 
 		bundle := setup(t)
 
-		req := &pb.UploadDocumentRequest{
+		req := &pb.AddDocumentRequest{
 			Data: "Test document content",
 			Metadata: map[string]string{
 				"Source": "Test System",
@@ -111,7 +111,7 @@ func TestUploadDocument(t *testing.T) {
 			},
 		}
 
-		_, err := bundle.server.UploadDocument(ctx, req)
+		_, err := bundle.server.AddDocument(ctx, req)
 		require.Error(t, err)
 		st, ok := status.FromError(err)
 		require.True(t, ok)
@@ -127,7 +127,7 @@ func TestUploadDocument(t *testing.T) {
 
 		bundle := setup(t)
 
-		req := &pb.UploadDocumentRequest{
+		req := &pb.AddDocumentRequest{
 			Data: "",
 			Metadata: map[string]string{
 				"Source":       "Test System",
@@ -138,7 +138,7 @@ func TestUploadDocument(t *testing.T) {
 			},
 		}
 
-		_, err := bundle.server.UploadDocument(ctx, req)
+		_, err := bundle.server.AddDocument(ctx, req)
 		require.Error(t, err)
 		st, ok := status.FromError(err)
 		require.True(t, ok)
@@ -150,7 +150,7 @@ func TestUploadDocument(t *testing.T) {
 	})
 }
 
-func TestUploadFile(t *testing.T) {
+func TestAddFile(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
@@ -188,7 +188,7 @@ func TestUploadFile(t *testing.T) {
 
 		bundle := setup(t)
 
-		req := &pb.UploadFileRequest{
+		req := &pb.AddFileRequest{
 			FileName:   "test.txt",
 			Data:       []byte("Test file content"),
 			AutoExpire: true,
@@ -201,7 +201,7 @@ func TestUploadFile(t *testing.T) {
 			},
 		}
 
-		resp, err := bundle.server.UploadFile(ctx, req)
+		resp, err := bundle.server.AddFile(ctx, req)
 		require.NoError(t, err)
 		require.NotEmpty(t, resp.Key)
 
@@ -225,7 +225,7 @@ func TestUploadFile(t *testing.T) {
 
 		bundle := setup(t)
 
-		req := &pb.UploadFileRequest{
+		req := &pb.AddFileRequest{
 			FileName: "test.txt",
 			Data:     []byte("Test file content"),
 			Metadata: map[string]string{
@@ -234,7 +234,7 @@ func TestUploadFile(t *testing.T) {
 			},
 		}
 
-		_, err := bundle.server.UploadFile(ctx, req)
+		_, err := bundle.server.AddFile(ctx, req)
 		require.Error(t, err)
 		st, ok := status.FromError(err)
 		require.True(t, ok)
@@ -250,7 +250,7 @@ func TestUploadFile(t *testing.T) {
 
 		bundle := setup(t)
 
-		req := &pb.UploadFileRequest{
+		req := &pb.AddFileRequest{
 			FileName: "test.txt",
 			Data:     []byte{},
 			Metadata: map[string]string{
@@ -262,7 +262,7 @@ func TestUploadFile(t *testing.T) {
 			},
 		}
 
-		_, err := bundle.server.UploadFile(ctx, req)
+		_, err := bundle.server.AddFile(ctx, req)
 		require.Error(t, err)
 		st, ok := status.FromError(err)
 		require.True(t, ok)
@@ -523,9 +523,8 @@ func TestList(t *testing.T) {
 		require.Nil(t, resp.Error)
 
 		// Check that we got the correct number of results
-		require.Len(t, resp.DocumentIds, 2)
-		require.Len(t, resp.FileIds, 1)
-		require.Len(t, resp.Documents, 0)
+		require.Len(t, resp.Documents, 2)
+		require.Len(t, resp.Files, 1)
 
 		// Convert UUIDs to strings for comparison
 		doc1ID, err := pgtypeUUIDToString(oids[0])
@@ -534,8 +533,8 @@ func TestList(t *testing.T) {
 		require.NoError(t, err)
 
 		// Check that we got the correct document and object
-		require.Contains(t, resp.DocumentIds, doc1ID)
-		require.Contains(t, resp.FileIds, obj1ID)
+		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Id }), doc1ID)
+		require.Contains(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Id }), obj1ID)
 	})
 
 	t.Run("List documents and objects with two entries in filter", func(t *testing.T) {
@@ -554,15 +553,47 @@ func TestList(t *testing.T) {
 		require.Nil(t, resp.Error)
 
 		// Check that we got the correct number of results
-		require.Len(t, resp.DocumentIds, 1)
-		require.Len(t, resp.FileIds, 1)
-		require.Len(t, resp.Documents, 0)
+		require.Len(t, resp.Documents, 1)
+		require.Len(t, resp.Files, 1)
 
 		// Check that we got the correct document and object
 		doc1ID, _ := pgtypeUUIDToString(oids[0])
 		obj1ID, _ := pgtypeUUIDToString(oids[2])
-		require.Contains(t, resp.DocumentIds, doc1ID)
-		require.Contains(t, resp.FileIds, obj1ID)
+		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Id }), doc1ID)
+		require.Contains(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Id }), obj1ID)
+		require.Empty(t, resp.Documents[0].Metadata)
+		require.Empty(t, resp.Documents[0].Data)
+		require.Empty(t, resp.Files[0].Metadata)
+	})
+
+	t.Run("List with two entries in filter including content and metadata", func(t *testing.T) {
+		bundle, oids := setup(t)
+		filter := &pb.ListFilter{
+			Type: pb.ListFilter_EQUAL,
+			Entries: map[string]string{
+				"Source":  "System1",
+				"Purpose": "Purpose1",
+			},
+		}
+
+		resp, err := bundle.server.List(ctx, &pb.ListRequest{Filter: filter, IncludeDocuments: true, IncludeMetadata: true})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Nil(t, resp.Error)
+
+		// Check that we got the correct number of results
+		require.Len(t, resp.Documents, 1)
+		require.Len(t, resp.Files, 1)
+
+		// Check that we got the correct document and object
+		doc1ID, _ := pgtypeUUIDToString(oids[0])
+		obj1ID, _ := pgtypeUUIDToString(oids[2])
+		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Id }), doc1ID)
+		require.Contains(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Id }), obj1ID)
+		require.Equal(t, resp.Documents[0].Metadata, map[string]string{"Source": "System1", "Purpose": "Purpose1"})
+		require.Equal(t, resp.Documents[0].Data, `{"test": "content1"}`)
+		require.Equal(t, resp.Files[0].Metadata, map[string]string{"Source": "System1", "Purpose": "Purpose1"})
+		require.Empty(t, resp.Files[0].Data)
 	})
 
 	t.Run("List documents and objects with nested AND filter", func(t *testing.T) {
@@ -591,15 +622,14 @@ func TestList(t *testing.T) {
 		require.Nil(t, resp.Error)
 
 		// Check that we got the correct number of results
-		require.Len(t, resp.DocumentIds, 1)
-		require.Len(t, resp.FileIds, 1)
-		require.Len(t, resp.Documents, 0)
+		require.Len(t, resp.Documents, 1)
+		require.Len(t, resp.Files, 1)
 
 		// Check that we got the correct document and object
 		doc1ID, _ := pgtypeUUIDToString(oids[0])
 		obj1ID, _ := pgtypeUUIDToString(oids[2])
-		require.Contains(t, resp.DocumentIds, doc1ID)
-		require.Contains(t, resp.FileIds, obj1ID)
+		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Id }), doc1ID)
+		require.Contains(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Id }), obj1ID)
 	})
 
 	t.Run("List documents and objects with AND and Contains filter", func(t *testing.T) {
@@ -628,15 +658,14 @@ func TestList(t *testing.T) {
 		require.Nil(t, resp.Error)
 
 		// Check that we got the correct number of results
-		require.Len(t, resp.DocumentIds, 1)
-		require.Len(t, resp.FileIds, 1)
-		require.Len(t, resp.Documents, 0)
+		require.Len(t, resp.Documents, 1)
+		require.Len(t, resp.Files, 1)
 
 		// Check that we got the correct document and object
 		doc1ID, _ := pgtypeUUIDToString(oids[0])
 		obj1ID, _ := pgtypeUUIDToString(oids[2])
-		require.Contains(t, resp.DocumentIds, doc1ID)
-		require.Contains(t, resp.FileIds, obj1ID)
+		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Id }), doc1ID)
+		require.Contains(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Id }), obj1ID)
 	})
 
 	t.Run("List documents and objects with AND and NOT filter", func(t *testing.T) {
@@ -665,15 +694,14 @@ func TestList(t *testing.T) {
 		require.Nil(t, resp.Error)
 
 		// Check that we got the correct number of results
-		require.Len(t, resp.DocumentIds, 1)
-		require.Len(t, resp.FileIds, 1)
-		require.Len(t, resp.Documents, 0)
+		require.Len(t, resp.Documents, 1)
+		require.Len(t, resp.Files, 1)
 
 		// Check that we got the correct document and object
 		doc1ID, _ := pgtypeUUIDToString(oids[0])
 		obj1ID, _ := pgtypeUUIDToString(oids[2])
-		require.Contains(t, resp.DocumentIds, doc1ID)
-		require.Contains(t, resp.FileIds, obj1ID)
+		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Id }), doc1ID)
+		require.Contains(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Id }), obj1ID)
 	})
 
 	t.Run("List documents and objects with nested AND and OR filter", func(t *testing.T) {
@@ -724,16 +752,15 @@ func TestList(t *testing.T) {
 		require.Nil(t, resp.Error)
 
 		// Check that we got the correct number of results
-		require.Len(t, resp.DocumentIds, 1)
-		require.Len(t, resp.FileIds, 2)
-		require.Len(t, resp.Documents, 0)
+		require.Len(t, resp.Documents, 1)
+		require.Len(t, resp.Files, 2)
 
 		// Check that we got the correct document and object
 		doc1ID, _ := pgtypeUUIDToString(oids[0])
 		obj1ID, _ := pgtypeUUIDToString(oids[2])
 		obj2ID, _ := pgtypeUUIDToString(oids[3])
-		require.Equal(t, resp.DocumentIds, []string{doc1ID})
-		require.ElementsMatch(t, resp.FileIds, []string{obj1ID, obj2ID})
+		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Id }), doc1ID)
+		require.ElementsMatch(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Id }), []string{obj1ID, obj2ID})
 	})
 
 	t.Run("List with invalid filter", func(t *testing.T) {
@@ -769,8 +796,7 @@ func TestList(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Nil(t, resp.Error)
-		require.Empty(t, resp.DocumentIds)
-		require.Empty(t, resp.FileIds)
 		require.Empty(t, resp.Documents)
+		require.Empty(t, resp.Files)
 	})
 }

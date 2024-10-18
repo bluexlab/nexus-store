@@ -11,14 +11,14 @@ service NexusStore {
       get: "/v1/store/get-download-url"
     };
   }
-  rpc UploadFile(UploadFileRequest) returns (UploadFileResponse) {
+  rpc AddFile(AddFileRequest) returns (AddFileResponse) {
     option (google.api.http) = {
-      post: "/v1/store/upload-file"
+      post: "/v1/store/add-file"
     };
   }
-  rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse) {
+  rpc RemoveFile(RemoveFileRequest) returns (RemoveFileResponse) {
     option (google.api.http) = {
-      delete: "/v1/store/delete-file"
+      delete: "/v1/store/remove-file"
     };
   }
   rpc TagAutoExpire(TagAutoExpireRequest) returns (TagAutoExpireResponse) {
@@ -33,9 +33,9 @@ service NexusStore {
   }
 
   // API for semi-structure data
-  rpc UploadDocument(UploadDocumentRequest) returns (UploadDocumentResponse) {
+  rpc AddDocument(AddDocumentRequest) returns (AddDocumentResponse) {
     option (google.api.http) = {
-      post: "/v1/store/upload-document"
+      post: "/v1/store/add-document"
     };
   }
 
@@ -89,23 +89,23 @@ message GetDownloadURLResponse {
   string url = 2;
 }
 
-message UploadFileRequest {
+message AddFileRequest {
   string file_name = 1;
   bytes data = 2;
   bool auto_expire = 3;
   map<string, string> metadata = 4;
 }
 
-message UploadFileResponse {
+message AddFileResponse {
   Error error = 1;
   string key = 2;
 }
 
-message DeleteFileRequest {
+message RemoveFileRequest {
   string key = 1;
 }
 
-message DeleteFileResponse {
+message RemoveFileResponse {
   Error error = 1;
   string key = 2;
 }
@@ -135,26 +135,33 @@ message AddMetadataResponse {
   Error error = 1;
 }
 
-message UploadDocumentRequest {
+message AddDocumentRequest {
   string data = 1; // Arbitrary data in valid JSON format
   map<string, string> metadata = 2;
 }
 
-message UploadDocumentResponse {
+message AddDocumentResponse {
   Error error = 1;
   string id = 2;
 }
 
 message ListRequest {
   ListFilter filter = 1;
-  bool return_documents = 2;
+  bool include_metadata = 10;
+  bool include_documents = 11;
+}
+
+message ListItem {
+  string id = 1;
+  int64 created_at = 2;
+  map<string, string> metadata = 3;
+  string data = 4;
 }
 
 message ListResponse {
   Error error = 1;
-  repeated string document_ids = 2;
-  repeated string file_ids = 3;
-  repeated string documents = 4;
+  repeated ListItem documents = 2;
+  repeated ListItem files = 3;
 }
 
 message ListFilter {

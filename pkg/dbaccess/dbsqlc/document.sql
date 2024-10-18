@@ -9,3 +9,8 @@ INSERT INTO documents (
 SELECT *
 FROM documents
 WHERE id = @id;
+
+-- name: DocumentFindByIds :many
+SELECT *
+FROM documents
+WHERE id = ANY(@ids::UUID[]);

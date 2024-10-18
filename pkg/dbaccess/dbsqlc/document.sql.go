@@ -24,6 +24,32 @@ func (q *Queries) DocumentFindById(ctx context.Context, db DBTX, id pgtype.UUID)
 	return &i, err
 }
 
+const documentFindByIds = `-- name: DocumentFindByIds :many
+SELECT id, content, created_at
+FROM documents
+WHERE id = ANY($1::UUID[])
+`
+
+func (q *Queries) DocumentFindByIds(ctx context.Context, db DBTX, ids []pgtype.UUID) ([]*Document, error) {
+	rows, err := db.Query(ctx, documentFindByIds, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*Document
+	for rows.Next() {
+		var i Document
+		if err := rows.Scan(&i.ID, &i.Content, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const documentInsert = `-- name: DocumentInsert :one
 INSERT INTO documents (
     content
