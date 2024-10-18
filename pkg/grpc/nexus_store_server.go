@@ -96,10 +96,6 @@ func (s *_NexusStoreServer) UploadDocument(ctx context.Context, req *pb.UploadDo
 	}
 
 	metadata := req.GetMetadata()
-	if metadata == nil {
-		metadata = []*pb.MetadataEntry{}
-	}
-
 	err := s.checkMetadataRequiredFields(metadata)
 	if err != nil {
 		slog.Error("NexusStoreServer::UploadDocument() fails to check metadata required fields.", "err", err)
@@ -146,19 +142,12 @@ func (s *_NexusStoreServer) UploadFile(ctx context.Context, req *pb.UploadFileRe
 	}
 
 	metadata := req.GetMetadata()
-	if metadata == nil {
-		metadata = []*pb.MetadataEntry{}
-	}
-
 	err := s.checkMetadataRequiredFields(metadata)
 	if err != nil {
 		slog.Error("NexusStoreServer::UploadFile() fails to check metadata required fields.", "err", err)
 		return nil, err
 	}
-	metadata = append(metadata, &pb.MetadataEntry{
-		Key:   "FileName",
-		Value: req.GetFileName(),
-	})
+	metadata["FileName"] = req.GetFileName()
 
 	var objectId string
 
@@ -177,8 +166,7 @@ func (s *_NexusStoreServer) UploadFile(ctx context.Context, req *pb.UploadFileRe
 		}
 
 		// Upload file to S3 storage
-		s3Metadata := convertMetadataEntriesToS3Metadata(metadata)
-		_, err = s.storage.AddDocument(ctx, objectId, req.GetData(), req.GetAutoExpire(), s3Metadata)
+		_, err = s.storage.AddDocument(ctx, objectId, req.GetData(), req.GetAutoExpire(), metadata)
 		if err != nil {
 			slog.Error("FileServer::UploadFile() fails to AddDocument().", "err", err)
 			return status.Errorf(codes.Internal, err.Error())
@@ -332,38 +320,23 @@ func (s *_NexusStoreServer) scanRows(rows pgx.Rows) ([]string, []string) {
 	return documentIds, objectIds
 }
 
-func convertMetadataEntriesToS3Metadata(entries []*pb.MetadataEntry) map[string]string {
-	metadata := make(map[string]string)
-	for _, entry := range entries {
-		metadata[entry.GetKey()] = entry.GetValue()
-	}
-	return metadata
-}
-
-func (s *_NexusStoreServer) checkMetadataRequiredFields(entries []*pb.MetadataEntry) error {
+func (s *_NexusStoreServer) checkMetadataRequiredFields(entries map[string]string) error {
 	requiredFields := []string{"Source", "CreatorEmail", "CustomerName", "Purpose", "ContentType"}
 	for _, field := range requiredFields {
-		found := false
-		for _, entry := range entries {
-			if entry.GetKey() == field {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if _, ok := entries[field]; !ok {
 			return status.Errorf(codes.InvalidArgument, "Missing required field for metadata: %s", field)
 		}
 	}
 	return nil
 }
 
-func (s *_NexusStoreServer) insertMetadata(ctx context.Context, tx dbaccess.DataSource, prefix string, uuid pgtype.UUID, entries []*pb.MetadataEntry) error {
+func (s *_NexusStoreServer) insertMetadata(ctx context.Context, tx dbaccess.DataSource, prefix string, uuid pgtype.UUID, metadata map[string]string) error {
 	var keys, values []string
 	var objectIDs, documentIDs []pgtype.UUID
 
-	for _, entry := range entries {
-		keys = append(keys, entry.Key)
-		values = append(values, entry.Value)
+	for key, value := range metadata {
+		keys = append(keys, key)
+		values = append(values, value)
 		appendIdentifier(&objectIDs, &documentIDs, prefix, uuid)
 	}
 

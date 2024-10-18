@@ -10,7 +10,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/bluexlab/retry-go"
 	"github.com/go-playground/validator"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -80,26 +79,26 @@ func (a *App) Run() {
 		os.Exit(1)
 	}
 
-	r := retry.New(func(error) bool { return true }, 10, 500, 3000)
+	// r := retry.New(func(error) bool { return true }, 10, 500, 3000)
 
-	err = r.Do(
-		func() error {
-			err = s3Storage.SetCORS(ctx, []string{"*"}, []string{"GET", "HEAD"}, 3000, []string{"Authorization"})
-			if err != nil {
-				return fmt.Errorf("fail to call S3Storage.SetCORS. %w", err)
-			}
-			// err = s3Storage.EnableExpiration(1) // Uncomment this line to enable auto_expire
-			err = s3Storage.DeleteBucketLifecycle(ctx) // Remove all lifecycle rules to disable auto_expire
-			if err != nil {
-				return fmt.Errorf("fail to call S3Storage.EnableExpiration. %w", err)
-			}
-			return nil
-		},
-	)
-	if err != nil {
-		slog.Error(err.Error())
-		os.Exit(1)
-	}
+	// err = r.Do(
+	// 	func() error {
+	// 		err = s3Storage.SetCORS(ctx, []string{"*"}, []string{"GET", "HEAD"}, 3000, []string{"Authorization"})
+	// 		if err != nil {
+	// 			return fmt.Errorf("fail to call S3Storage.SetCORS. %w", err)
+	// 		}
+	// 		// err = s3Storage.EnableExpiration(1) // Uncomment this line to enable auto_expire
+	// 		err = s3Storage.DeleteBucketLifecycle(ctx) // Remove all lifecycle rules to disable auto_expire
+	// 		if err != nil {
+	// 			return fmt.Errorf("fail to call S3Storage.EnableExpiration. %w", err)
+	// 		}
+	// 		return nil
+	// 	},
+	// )
+	// if err != nil {
+	// 	slog.Error(err.Error())
+	// 	os.Exit(1)
+	// }
 
 	nexusStoreGrpcServer := grpc_grpc.NewServer(
 		grpc_grpc.MaxRecvMsgSize(1024 * 1024 * 10 * 11 / 10),

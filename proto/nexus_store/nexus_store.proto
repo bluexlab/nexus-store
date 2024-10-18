@@ -48,7 +48,8 @@ service NexusStore {
 
   rpc List(ListRequest) returns (ListResponse) {
     option (google.api.http) = {
-      get: "/v1/store/list"
+      post: "/v1/store/list"
+      body: "*"
     };
   }
 }
@@ -92,7 +93,7 @@ message UploadFileRequest {
   string file_name = 1;
   bytes data = 2;
   bool auto_expire = 3;
-  repeated MetadataEntry metadata = 4;
+  map<string, string> metadata = 4;
 }
 
 message UploadFileResponse {
@@ -127,7 +128,7 @@ message UntagAutoExpireResponse {
 
 message AddMetadataRequest {
   string key = 1; // The key of the metadata, could be of format "document-[uuid]" or "object-[uuid]"
-  repeated MetadataEntry new_metadata = 2; // Other attributes in key-value pairs.
+  map<string, string> new_metadata = 2; // Other attributes in key-value pairs.
 }
 
 message AddMetadataResponse {
@@ -136,7 +137,7 @@ message AddMetadataResponse {
 
 message UploadDocumentRequest {
   string data = 1; // Arbitrary data in valid JSON format
-  repeated MetadataEntry metadata = 2;
+  map<string, string> metadata = 2;
 }
 
 message UploadDocumentResponse {
@@ -173,5 +174,5 @@ message ListFilter {
   repeated ListFilter sub_filters = 2;
 
   // metadata entries, it's only used in METADATA_EQUAL, METADATA_NOT_EQUAL, METADATA_CONTAINS, METADATA_NOT_CONTAINS, METADATA_REGEX.
-  repeated MetadataEntry entries = 3;
+  map<string, string> entries = 3;
 }

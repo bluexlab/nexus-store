@@ -32,47 +32,47 @@ func CreateListFilter(s *nexus_store.ListFilter) (ListFilter, error) {
 		return &filter, nil
 
 	case nexus_store.ListFilter_EQUAL:
-		if len(s.GetEntries()) <= 0 {
-			return nil, fmt.Errorf("metadata entries is empty")
-
-		} else if len(s.GetEntries()) > 1 {
+		if len(s.GetEntries()) > 1 {
 			filter := _AndGroupFilter{}
-			for _, entry := range s.GetEntries() {
-				filter.filters = append(filter.filters, &_EqualFilter{key: entry.GetKey(), value: entry.GetValue()})
+			for key, value := range s.GetEntries() {
+				filter.filters = append(filter.filters, &_EqualFilter{key: key, value: value})
 			}
 			return &filter, nil
 		} else {
-			return &_EqualFilter{key: s.GetEntries()[0].GetKey(), value: s.GetEntries()[0].GetValue()}, nil
+			for key, value := range s.GetEntries() {
+				return &_EqualFilter{key: key, value: value}, nil
+			}
+			return nil, fmt.Errorf("unexpected empty entries")
 		}
 
 	case nexus_store.ListFilter_NOT_EQUAL:
-		if len(s.GetEntries()) <= 0 {
-			return nil, fmt.Errorf("metadata entries is empty")
-
-		} else if len(s.GetEntries()) > 1 {
+		if len(s.GetEntries()) > 1 {
 			filter := _OrGroupFilter{}
-			for _, entry := range s.GetEntries() {
-				filter.filters = append(filter.filters, &_NotEqualFilter{key: entry.GetKey(), value: entry.GetValue()})
+			for key, value := range s.GetEntries() {
+				filter.filters = append(filter.filters, &_NotEqualFilter{key: key, value: value})
 			}
 			return &filter, nil
 
 		} else {
-			return &_NotEqualFilter{key: s.GetEntries()[0].GetKey(), value: s.GetEntries()[0].GetValue()}, nil
+			for key, value := range s.GetEntries() {
+				return &_NotEqualFilter{key: key, value: value}, nil
+			}
+			return nil, fmt.Errorf("unexpected empty entries")
 		}
 
 	case nexus_store.ListFilter_CONTAINS:
-		if len(s.GetEntries()) <= 0 {
-			return nil, fmt.Errorf("metadata entries is empty")
-
-		} else if len(s.GetEntries()) > 1 {
+		if len(s.GetEntries()) > 1 {
 			filter := _AndGroupFilter{}
-			for _, entry := range s.GetEntries() {
-				filter.filters = append(filter.filters, &_ContainsFilter{key: entry.GetKey(), value: entry.GetValue()})
+			for key, value := range s.GetEntries() {
+				filter.filters = append(filter.filters, &_ContainsFilter{key: key, value: value})
 			}
 			return &filter, nil
 
 		} else {
-			return &_ContainsFilter{key: s.GetEntries()[0].GetKey(), value: s.GetEntries()[0].GetValue()}, nil
+			for key, value := range s.GetEntries() {
+				return &_ContainsFilter{key: key, value: value}, nil
+			}
+			return nil, fmt.Errorf("unexpected empty entries")
 		}
 
 	default:

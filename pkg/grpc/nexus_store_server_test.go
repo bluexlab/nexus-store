@@ -63,12 +63,12 @@ func TestUploadDocument(t *testing.T) {
 
 		req := &pb.UploadDocumentRequest{
 			Data: `{"test": "content"}`,
-			Metadata: []*pb.MetadataEntry{
-				{Key: "Source", Value: "Test System"},
-				{Key: "ContentType", Value: "application/json"},
-				{Key: "CreatorEmail", Value: "test@example.com"},
-				{Key: "CustomerName", Value: "Test Customer"},
-				{Key: "Purpose", Value: "Testing"},
+			Metadata: map[string]string{
+				"Source":       "Test System",
+				"ContentType":  "application/json",
+				"CreatorEmail": "test@example.com",
+				"CustomerName": "Test Customer",
+				"Purpose":      "Testing",
 			},
 		}
 
@@ -87,16 +87,12 @@ func TestUploadDocument(t *testing.T) {
 
 		// Verify metadata was inserted
 		recs, err := querier.MetadataFindByDocumentId(ctx, bundle.dataSource, pgUUID)
+		require.NoError(t, err)
 		metadata := lo.Reduce(recs, func(agg map[string]string, item *dbsqlc.MetadataFindByDocumentIdRow, _ int) map[string]string {
 			agg[item.Key] = item.Value
 			return agg
 		}, map[string]string{})
-		require.NoError(t, err)
-		require.Len(t, metadata, len(req.Metadata))
-		require.Equal(t, lo.Reduce(req.Metadata, func(agg map[string]string, item *pb.MetadataEntry, _ int) map[string]string {
-			agg[item.Key] = item.Value
-			return agg
-		}, map[string]string{}), metadata)
+		require.Equal(t, req.Metadata, metadata)
 
 		// Verify S3 storage was not used
 		require.Empty(t, bundle.s3Storage.Client().(*storage.MockS3Client).Objects)
@@ -109,8 +105,8 @@ func TestUploadDocument(t *testing.T) {
 
 		req := &pb.UploadDocumentRequest{
 			Data: "Test document content",
-			Metadata: []*pb.MetadataEntry{
-				{Key: "Source", Value: "Test System"},
+			Metadata: map[string]string{
+				"Source": "Test System",
 				// Missing other required fields
 			},
 		}
@@ -133,12 +129,12 @@ func TestUploadDocument(t *testing.T) {
 
 		req := &pb.UploadDocumentRequest{
 			Data: "",
-			Metadata: []*pb.MetadataEntry{
-				{Key: "Source", Value: "Test System"},
-				{Key: "ContentType", Value: "application/json"},
-				{Key: "CreatorEmail", Value: "test@example.com"},
-				{Key: "CustomerName", Value: "Test Customer"},
-				{Key: "Purpose", Value: "Testing"},
+			Metadata: map[string]string{
+				"Source":       "Test System",
+				"ContentType":  "application/json",
+				"CreatorEmail": "test@example.com",
+				"CustomerName": "Test Customer",
+				"Purpose":      "Testing",
 			},
 		}
 
@@ -196,12 +192,12 @@ func TestUploadFile(t *testing.T) {
 			FileName:   "test.txt",
 			Data:       []byte("Test file content"),
 			AutoExpire: true,
-			Metadata: []*pb.MetadataEntry{
-				{Key: "Source", Value: "Test System"},
-				{Key: "ContentType", Value: "text/plain"},
-				{Key: "CreatorEmail", Value: "test@example.com"},
-				{Key: "CustomerName", Value: "Test Customer"},
-				{Key: "Purpose", Value: "Testing"},
+			Metadata: map[string]string{
+				"Source":       "Test System",
+				"ContentType":  "text/plain",
+				"CreatorEmail": "test@example.com",
+				"CustomerName": "Test Customer",
+				"Purpose":      "Testing",
 			},
 		}
 
@@ -217,11 +213,7 @@ func TestUploadFile(t *testing.T) {
 		// Verify metadata was stored
 		metadata, err := bundle.s3Storage.GetMetadata(ctx, resp.Key)
 		require.NoError(t, err)
-		require.Equal(t, "Test System", metadata["Source"])
-		require.Equal(t, "text/plain", metadata["ContentType"])
-		require.Equal(t, "test@example.com", metadata["CreatorEmail"])
-		require.Equal(t, "Test Customer", metadata["CustomerName"])
-		require.Equal(t, "Testing", metadata["Purpose"])
+		require.Equal(t, req.Metadata, metadata)
 		require.Equal(t, "test.txt", metadata["FileName"])
 
 		// Verify auto-expire tag
@@ -236,8 +228,8 @@ func TestUploadFile(t *testing.T) {
 		req := &pb.UploadFileRequest{
 			FileName: "test.txt",
 			Data:     []byte("Test file content"),
-			Metadata: []*pb.MetadataEntry{
-				{Key: "Source", Value: "Test System"},
+			Metadata: map[string]string{
+				"Source": "Test System",
 				// Missing other required fields
 			},
 		}
@@ -261,12 +253,12 @@ func TestUploadFile(t *testing.T) {
 		req := &pb.UploadFileRequest{
 			FileName: "test.txt",
 			Data:     []byte{},
-			Metadata: []*pb.MetadataEntry{
-				{Key: "Source", Value: "Test System"},
-				{Key: "ContentType", Value: "text/plain"},
-				{Key: "CreatorEmail", Value: "test@example.com"},
-				{Key: "CustomerName", Value: "Test Customer"},
-				{Key: "Purpose", Value: "Testing"},
+			Metadata: map[string]string{
+				"Source":       "Test System",
+				"ContentType":  "text/plain",
+				"CreatorEmail": "test@example.com",
+				"CustomerName": "Test Customer",
+				"Purpose":      "Testing",
 			},
 		}
 
@@ -315,19 +307,10 @@ func TestAddMetadata(t *testing.T) {
 
 		req := &pb.AddMetadataRequest{
 			Key: fmt.Sprintf("object-%v", id),
-			NewMetadata: []*pb.MetadataEntry{
-				{
-					Key:   "Source",
-					Value: "Test System",
-				},
-				{
-					Key:   "CreatorEmail",
-					Value: "test@example.com",
-				},
-				{
-					Key:   "test key",
-					Value: "test value",
-				},
+			NewMetadata: map[string]string{
+				"Source":       "Test System",
+				"CreatorEmail": "test@example.com",
+				"test key":     "test value",
 			},
 		}
 
@@ -349,19 +332,10 @@ func TestAddMetadata(t *testing.T) {
 
 		req := &pb.AddMetadataRequest{
 			Key: fmt.Sprintf("document-%v", id),
-			NewMetadata: []*pb.MetadataEntry{
-				{
-					Key:   "Source",
-					Value: "Test System",
-				},
-				{
-					Key:   "CreatorEmail",
-					Value: "test@example.com",
-				},
-				{
-					Key:   "test key",
-					Value: "test value",
-				},
+			NewMetadata: map[string]string{
+				"Source":       "Test System",
+				"CreatorEmail": "test@example.com",
+				"test key":     "test value",
 			},
 		}
 
@@ -391,23 +365,11 @@ func TestAddMetadata(t *testing.T) {
 
 		req := &pb.AddMetadataRequest{
 			Key: fmt.Sprintf("object-%v", id),
-			NewMetadata: []*pb.MetadataEntry{
-				{
-					Key:   "Source",
-					Value: "Test System",
-				},
-				{
-					Key:   "CreatorEmail",
-					Value: "test@example.com",
-				},
-				{
-					Key:   "test key",
-					Value: "test value",
-				},
-				{
-					Key:   "ExistingKey",
-					Value: "ExistingValue",
-				},
+			NewMetadata: map[string]string{
+				"Source":       "Test System",
+				"CreatorEmail": "test@example.com",
+				"test key":     "test value",
+				"ExistingKey":  "ExistingValue",
 			},
 		}
 
@@ -416,7 +378,6 @@ func TestAddMetadata(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, response)
-
 	})
 
 	t.Run("Invalid request - no key provided", func(t *testing.T) {
@@ -425,11 +386,8 @@ func TestAddMetadata(t *testing.T) {
 		server := NewNexusStoreServer(WithDataSource(bundle.dbPool))
 
 		req := &pb.AddMetadataRequest{
-			NewMetadata: []*pb.MetadataEntry{
-				{
-					Key:   "Source",
-					Value: "Test System",
-				},
+			NewMetadata: map[string]string{
+				"Source": "Test System",
 			},
 		}
 
@@ -526,16 +484,16 @@ func TestList(t *testing.T) {
 				document2.ID,
 				document1.ID,
 				document2.ID,
-				pgtype.UUID{Valid: false},
-				pgtype.UUID{Valid: false},
-				pgtype.UUID{Valid: false},
-				pgtype.UUID{Valid: false},
+				{Valid: false},
+				{Valid: false},
+				{Valid: false},
+				{Valid: false},
 			},
 			ObjectIds: []pgtype.UUID{
-				pgtype.UUID{Valid: false},
-				pgtype.UUID{Valid: false},
-				pgtype.UUID{Valid: false},
-				pgtype.UUID{Valid: false},
+				{Valid: false},
+				{Valid: false},
+				{Valid: false},
+				{Valid: false},
 				s3Object1.ID,
 				s3Object2.ID,
 				s3Object1.ID,
@@ -553,8 +511,10 @@ func TestList(t *testing.T) {
 
 		// Create a filter to match documents and objects with Source = System1
 		filter := &pb.ListFilter{
-			Type:    pb.ListFilter_EQUAL,
-			Entries: []*pb.MetadataEntry{{Key: "Source", Value: "System1"}},
+			Type: pb.ListFilter_EQUAL,
+			Entries: map[string]string{
+				"Source": "System1",
+			},
 		}
 
 		resp, err := bundle.server.List(ctx, &pb.ListRequest{Filter: filter})
@@ -582,9 +542,9 @@ func TestList(t *testing.T) {
 		bundle, oids := setup(t)
 		filter := &pb.ListFilter{
 			Type: pb.ListFilter_EQUAL,
-			Entries: []*pb.MetadataEntry{
-				{Key: "Source", Value: "System1"},
-				{Key: "Purpose", Value: "Purpose1"},
+			Entries: map[string]string{
+				"Source":  "System1",
+				"Purpose": "Purpose1",
 			},
 		}
 
@@ -609,13 +569,20 @@ func TestList(t *testing.T) {
 		bundle, oids := setup(t)
 		filter := &pb.ListFilter{
 			Type: pb.ListFilter_AND_GROUP,
-			SubFilters: []*pb.ListFilter{{
-				Type:    pb.ListFilter_EQUAL,
-				Entries: []*pb.MetadataEntry{{Key: "Source", Value: "System1"}},
-			}, {
-				Type:    pb.ListFilter_EQUAL,
-				Entries: []*pb.MetadataEntry{{Key: "Purpose", Value: "Purpose1"}},
-			}},
+			SubFilters: []*pb.ListFilter{
+				{
+					Type: pb.ListFilter_EQUAL,
+					Entries: map[string]string{
+						"Source": "System1",
+					},
+				},
+				{
+					Type: pb.ListFilter_EQUAL,
+					Entries: map[string]string{
+						"Purpose": "Purpose1",
+					},
+				},
+			},
 		}
 
 		resp, err := bundle.server.List(ctx, &pb.ListRequest{Filter: filter})
@@ -639,13 +606,20 @@ func TestList(t *testing.T) {
 		bundle, oids := setup(t)
 		filter := &pb.ListFilter{
 			Type: pb.ListFilter_AND_GROUP,
-			SubFilters: []*pb.ListFilter{{
-				Type:    pb.ListFilter_EQUAL,
-				Entries: []*pb.MetadataEntry{{Key: "Source", Value: "System1"}},
-			}, {
-				Type:    pb.ListFilter_CONTAINS,
-				Entries: []*pb.MetadataEntry{{Key: "Purpose", Value: "ose1"}},
-			}},
+			SubFilters: []*pb.ListFilter{
+				{
+					Type: pb.ListFilter_EQUAL,
+					Entries: map[string]string{
+						"Source": "System1",
+					},
+				},
+				{
+					Type: pb.ListFilter_CONTAINS,
+					Entries: map[string]string{
+						"Purpose": "ose1",
+					},
+				},
+			},
 		}
 
 		resp, err := bundle.server.List(ctx, &pb.ListRequest{Filter: filter})
@@ -669,13 +643,20 @@ func TestList(t *testing.T) {
 		bundle, oids := setup(t)
 		filter := &pb.ListFilter{
 			Type: pb.ListFilter_AND_GROUP,
-			SubFilters: []*pb.ListFilter{{
-				Type:    pb.ListFilter_EQUAL,
-				Entries: []*pb.MetadataEntry{{Key: "Source", Value: "System1"}},
-			}, {
-				Type:    pb.ListFilter_NOT_EQUAL,
-				Entries: []*pb.MetadataEntry{{Key: "Purpose", Value: "Purpose2"}},
-			}},
+			SubFilters: []*pb.ListFilter{
+				{
+					Type: pb.ListFilter_EQUAL,
+					Entries: map[string]string{
+						"Source": "System1",
+					},
+				},
+				{
+					Type: pb.ListFilter_NOT_EQUAL,
+					Entries: map[string]string{
+						"Purpose": "Purpose2",
+					},
+				},
+			},
 		}
 
 		resp, err := bundle.server.List(ctx, &pb.ListRequest{Filter: filter})
@@ -699,25 +680,42 @@ func TestList(t *testing.T) {
 		bundle, oids := setup(t)
 		filter := &pb.ListFilter{
 			Type: pb.ListFilter_OR_GROUP,
-			SubFilters: []*pb.ListFilter{{
-				Type: pb.ListFilter_AND_GROUP,
-				SubFilters: []*pb.ListFilter{{
-					Type:    pb.ListFilter_EQUAL,
-					Entries: []*pb.MetadataEntry{{Key: "Source", Value: "System1"}},
-				}, {
-					Type:    pb.ListFilter_EQUAL,
-					Entries: []*pb.MetadataEntry{{Key: "Purpose", Value: "Purpose1"}},
-				}},
-			}, {
-				Type: pb.ListFilter_AND_GROUP,
-				SubFilters: []*pb.ListFilter{{
-					Type:    pb.ListFilter_EQUAL,
-					Entries: []*pb.MetadataEntry{{Key: "Source", Value: "System2"}},
-				}, {
-					Type:    pb.ListFilter_EQUAL,
-					Entries: []*pb.MetadataEntry{{Key: "Purpose", Value: "Purpose2"}},
-				}},
-			}},
+			SubFilters: []*pb.ListFilter{
+				{
+					Type: pb.ListFilter_AND_GROUP,
+					SubFilters: []*pb.ListFilter{
+						{
+							Type: pb.ListFilter_EQUAL,
+							Entries: map[string]string{
+								"Source": "System1",
+							},
+						},
+						{
+							Type: pb.ListFilter_EQUAL,
+							Entries: map[string]string{
+								"Purpose": "Purpose1",
+							},
+						},
+					},
+				},
+				{
+					Type: pb.ListFilter_AND_GROUP,
+					SubFilters: []*pb.ListFilter{
+						{
+							Type: pb.ListFilter_EQUAL,
+							Entries: map[string]string{
+								"Source": "System2",
+							},
+						},
+						{
+							Type: pb.ListFilter_EQUAL,
+							Entries: map[string]string{
+								"Purpose": "Purpose2",
+							},
+						},
+					},
+				},
+			},
 		}
 
 		resp, err := bundle.server.List(ctx, &pb.ListRequest{Filter: filter})
@@ -758,11 +756,8 @@ func TestList(t *testing.T) {
 		// Create a filter that won't match any documents or objects
 		filter := &pb.ListFilter{
 			Type: pb.ListFilter_EQUAL,
-			Entries: []*pb.MetadataEntry{
-				{
-					Key:   "Source",
-					Value: "NonExistentSystem",
-				},
+			Entries: map[string]string{
+				"Source": "NonExistentSystem",
 			},
 		}
 
