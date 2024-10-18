@@ -14,6 +14,7 @@ type Querier interface {
 	DocumentFindById(ctx context.Context, db DBTX, id pgtype.UUID) (*Document, error)
 	DocumentFindByIds(ctx context.Context, db DBTX, ids []pgtype.UUID) ([]*Document, error)
 	DocumentInsert(ctx context.Context, db DBTX, content []byte) (*Document, error)
+	DocumentOrObjectById(ctx context.Context, db DBTX, id pgtype.UUID) ([]*DocumentOrObjectByIdRow, error)
 	MetadataFindByDocumentId(ctx context.Context, db DBTX, documentID pgtype.UUID) ([]*MetadataFindByDocumentIdRow, error)
 	MetadataFindByDocumentIds(ctx context.Context, db DBTX, documentIds []pgtype.UUID) ([]*MetadataFindByDocumentIdsRow, error)
 	MetadataFindByObjectIds(ctx context.Context, db DBTX, objectIds []pgtype.UUID) ([]*MetadataFindByObjectIdsRow, error)

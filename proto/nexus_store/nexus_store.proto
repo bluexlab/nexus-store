@@ -127,7 +127,7 @@ message UntagAutoExpireResponse {
 }
 
 message AddMetadataRequest {
-  string key = 1; // The key of the metadata, could be of format "document-[uuid]" or "object-[uuid]"
+  string key = 1;
   map<string, string> new_metadata = 2; // Other attributes in key-value pairs.
 }
 

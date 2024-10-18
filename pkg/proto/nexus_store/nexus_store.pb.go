@@ -770,7 +770,7 @@ type AddMetadataRequest struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Key         string            `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`                                                                                                                            // The key of the metadata, could be of format "document-[uuid]" or "object-[uuid]"
+	Key         string            `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	NewMetadata map[string]string `protobuf:"bytes,2,rep,name=new_metadata,json=newMetadata,proto3" json:"new_metadata,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"` // Other attributes in key-value pairs.
 }
 

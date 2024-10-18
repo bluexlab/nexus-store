@@ -2,17 +2,13 @@ package grpc
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
-	"slices"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/samber/lo"
@@ -22,13 +18,16 @@ import (
 	nexus "gitlab.com/navyx/nexus/nexus-store/pkg/proto/nexus_store"
 	pb "gitlab.com/navyx/nexus/nexus-store/pkg/proto/nexus_store"
 	"gitlab.com/navyx/nexus/nexus-store/pkg/storage"
+	"gitlab.com/navyx/nexus/nexus-store/pkg/util"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
+type ObjectType int
+
 const (
-	MetadataKeyPrefixObject   = "object"
-	MetadataKeyPrefixDocument = "document"
+	ObjectTypeFile ObjectType = iota
+	ObjectTypeDocument
 )
 
 var (
@@ -113,13 +112,13 @@ func (s *_NexusStoreServer) AddDocument(ctx context.Context, req *pb.AddDocument
 			return status.Errorf(codes.Internal, "Failed to insert into document table: %v", err)
 		}
 
-		documentId, err = pgtypeUUIDToString(document.ID)
+		documentId, err = util.PgtypeUUIDToString(document.ID)
 		if err != nil {
 			slog.Error("NexusStoreServer::UploadDocument() fails to convert UUID to string.", "err", err)
 			return status.Errorf(codes.Internal, "Failed to convert UUID to string: %v", err)
 		}
 
-		if err := s.insertMetadata(ctx, tx, MetadataKeyPrefixDocument, document.ID, metadata); err != nil {
+		if err := s.insertMetadata(ctx, tx, ObjectTypeDocument, document.ID, metadata); err != nil {
 			slog.Error("NexusStoreServer::UploadDocument() fails to insert metadata.", "err", err)
 			return err
 		}
@@ -161,7 +160,7 @@ func (s *_NexusStoreServer) AddFile(ctx context.Context, req *pb.AddFileRequest)
 			return status.Errorf(codes.Internal, "Failed to insert into s3Object table: %v", err)
 		}
 
-		objectId, err = pgtypeUUIDToString(s3Object.ID)
+		objectId, err = util.PgtypeUUIDToString(s3Object.ID)
 		if err != nil {
 			slog.Error("NexusStoreServer::AddFile() fails to convert UUID to string.", "err", err)
 			return status.Errorf(codes.Internal, "Failed to convert UUID to string: %v", err)
@@ -174,7 +173,7 @@ func (s *_NexusStoreServer) AddFile(ctx context.Context, req *pb.AddFileRequest)
 			return status.Errorf(codes.Internal, err.Error())
 		}
 
-		if err := s.insertMetadata(ctx, tx, MetadataKeyPrefixObject, s3Object.ID, metadata); err != nil {
+		if err := s.insertMetadata(ctx, tx, ObjectTypeFile, s3Object.ID, metadata); err != nil {
 			slog.Error("NexusStoreServer::AddFile() fails to insert metadata.", "err", err)
 			return err
 		}
@@ -210,38 +209,37 @@ func (s *_NexusStoreServer) AddMetadata(ctx context.Context, req *pb.AddMetadata
 	if len(key) == 0 {
 		return nil, status.Errorf(codes.InvalidArgument, "Key is required")
 	}
-
-	parts := strings.SplitN(key, "-", 2)
-	prefix, id := parts[0], parts[1]
-
-	validPrefixes := []string{MetadataKeyPrefixObject, MetadataKeyPrefixDocument}
-	if !slices.Contains(validPrefixes, prefix) {
-		slog.Error("NexusStoreServer::AddMetadata() fails to check metadata required fields.", "prefix", prefix)
-		return nil, status.Errorf(codes.InvalidArgument, "Invalid key prefix")
-	}
-
-	pgUuid, err := stringToPgtypeUUID(id)
+	keyUuid, err := util.StringToPgtypeUUID(key)
 	if err != nil {
-		slog.Error("NexusStoreServer::AddMetadata() fails to convert UUID to string.", "err", err)
 		return nil, status.Errorf(codes.InvalidArgument, "Invalid UUID: %v", err)
 	}
 
-	// Verify existence of the object or document
-	if prefix == MetadataKeyPrefixObject {
-		if _, err := querier.S3ObjectFindById(ctx, s.dataSource, pgUuid); err != nil {
-			slog.Error("NexusStoreServer::AddMetadata() fails to find object.", "err", err)
-			return nil, status.Errorf(codes.Internal, "Failed to find object: %v", err)
-		}
-	} else {
-		if _, err := querier.DocumentFindById(ctx, s.dataSource, pgUuid); err != nil {
-			slog.Error("NexusStoreServer::AddMetadata() fails to find document.", "err", err)
-			return nil, status.Errorf(codes.Internal, "Failed to find document: %v", err)
-		}
+	tx, err := s.dataSource.Begin(ctx)
+	if err != nil {
+		slog.Error("NexusStoreServer::AddMetadata() fails to begin transaction.", "err", err)
+		return nil, status.Errorf(codes.Internal, "Failed to begin transaction: %v", err)
+	}
+	defer tx.Rollback(ctx)
+
+	recs, err := querier.DocumentOrObjectById(ctx, tx, keyUuid)
+	if err != nil {
+		slog.Error("NexusStoreServer::AddMetadata() fails to find object or document.", "err", err)
+		return nil, status.Errorf(codes.Internal, "Failed to find object or document: %v", err)
+	}
+	if len(recs) == 0 {
+		slog.Error("NexusStoreServer::AddMetadata() object or document not found", "key", key)
+		return nil, status.Errorf(codes.NotFound, "Object or document not found")
 	}
 
-	if err := s.insertMetadata(ctx, s.dataSource, prefix, pgUuid, req.GetNewMetadata()); err != nil {
+	objectType := lo.Ternary(recs[0].DocumentID.Valid, ObjectTypeDocument, ObjectTypeFile)
+	if err := s.insertMetadata(ctx, tx, objectType, keyUuid, req.GetNewMetadata()); err != nil {
 		slog.Error("NexusStoreServer::AddMetadata() fails to insert metadata.", "err", err)
 		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.Error("NexusStoreServer::AddMetadata() fails to commit transaction.", "err", err)
+		return nil, status.Errorf(codes.Internal, "Failed to commit transaction: %v", err)
 	}
 
 	return &pb.AddMetadataResponse{}, nil
@@ -256,12 +254,12 @@ func (s *_NexusStoreServer) List(ctx context.Context, req *pb.ListRequest) (*pb.
 
 	filter, err := model.CreateListFilter(req.GetFilter())
 	if err != nil {
-		return s.errorResponse(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "fails to create list filter", err)
+		return s.errorResponse(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "fails to create list filter", err), nil
 	}
 
 	builder, err := filter.SqlQuery()
 	if err != nil {
-		return s.errorResponse(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "fails to create list filter", err)
+		return s.errorResponse(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "fails to create list filter", err), nil
 	}
 	query := s.buildQuery(builder)
 	slog.Info("NexusStoreServer::List() query", "query", query, "whereArgs", builder.WhereArgs, "havingArgs", builder.HavingArgs)
@@ -269,86 +267,21 @@ func (s *_NexusStoreServer) List(ctx context.Context, req *pb.ListRequest) (*pb.
 	args := append(builder.WhereArgs, builder.HavingArgs...)
 	rows, err := s.dataSource.Query(ctx, query, args...)
 	if err != nil {
-		return s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to execute query", err)
+		return s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to execute query", err), nil
 	}
 	defer rows.Close()
 
 	documentIds, objectIds := s.scanRows(rows)
-	slog.Info("NexusStoreServer::List() documentIds", "documentIds", documentIds, "objectIds", objectIds)
+	slog.Debug("NexusStoreServer::List() documentIds", "documentIds", documentIds, "objectIds", objectIds)
 
-	documents, files := map[pgtype.UUID]*pb.ListItem{}, map[pgtype.UUID]*pb.ListItem{}
-
-	if len(documentIds) > 0 {
-		for _, id := range documentIds {
-			if !id.Valid {
-				continue
-			}
-			documents[id] = &pb.ListItem{Id: mustPgtypeUUIDToString(id)}
-		}
-
-		if req.GetIncludeDocuments() {
-			records, err := querier.DocumentFindByIds(ctx, s.dataSource, documentIds)
-			if err != nil {
-				return s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to find documents", err)
-			}
-			for _, record := range records {
-				if doc, ok := documents[record.ID]; ok {
-					doc.Data = string(record.Content)
-					doc.CreatedAt = record.CreatedAt
-				}
-			}
-		}
-
-		if req.GetIncludeMetadata() {
-			metadataRecords, err := querier.MetadataFindByDocumentIds(ctx, s.dataSource, documentIds)
-			if err != nil {
-				return s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to find document metadata", err)
-			}
-			for _, metadata := range metadataRecords {
-				if !metadata.DocumentID.Valid {
-					continue
-				}
-				if doc, ok := documents[metadata.DocumentID]; ok {
-					if doc.Metadata != nil {
-						doc.Metadata = make(map[string]string)
-					}
-					err := json.Unmarshal(metadata.Metadata, &doc.Metadata)
-					if err != nil {
-						return s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to unmarshal document metadata", err)
-					}
-				}
-			}
-		}
+	documents, errResp := s.processDocuments(ctx, documentIds, req.GetIncludeDocuments(), req.GetIncludeMetadata())
+	if errResp != nil {
+		return errResp, nil
 	}
 
-	if len(objectIds) > 0 {
-		for _, id := range objectIds {
-			if !id.Valid {
-				continue
-			}
-			files[id] = &pb.ListItem{Id: mustPgtypeUUIDToString(id)}
-		}
-
-		if req.GetIncludeMetadata() {
-			metadataRecords, err := querier.MetadataFindByObjectIds(ctx, s.dataSource, objectIds)
-			if err != nil {
-				return s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to find file metadata", err)
-			}
-			for _, metadata := range metadataRecords {
-				if !metadata.ObjectID.Valid {
-					continue
-				}
-				if file, ok := files[metadata.ObjectID]; ok {
-					if file.Metadata != nil {
-						file.Metadata = make(map[string]string)
-					}
-					err := json.Unmarshal(metadata.Metadata, &file.Metadata)
-					if err != nil {
-						return s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to unmarshal file metadata", err)
-					}
-				}
-			}
-		}
+	files, errResp := s.processFiles(ctx, objectIds, req.GetIncludeMetadata())
+	if errResp != nil {
+		return errResp, nil
 	}
 
 	return &pb.ListResponse{
@@ -357,13 +290,111 @@ func (s *_NexusStoreServer) List(ctx context.Context, req *pb.ListRequest) (*pb.
 	}, nil
 }
 
-func (s *_NexusStoreServer) errorResponse(code nexus.Error_ErrorCode, msg string, err error) (*pb.ListResponse, error) {
+func (s *_NexusStoreServer) processDocuments(
+	ctx context.Context,
+	documentIds []pgtype.UUID,
+	includeDocuments,
+	includeMetadata bool,
+) (map[pgtype.UUID]*pb.ListItem, *pb.ListResponse) {
+	documents := map[pgtype.UUID]*pb.ListItem{}
+
+	if len(documentIds) <= 0 {
+		return documents, nil
+	}
+
+	for _, id := range documentIds {
+		if !id.Valid {
+			continue
+		}
+		documents[id] = &pb.ListItem{Id: util.MustPgtypeUUIDToString(id)}
+	}
+
+	if includeDocuments {
+		records, err := querier.DocumentFindByIds(ctx, s.dataSource, documentIds)
+		if err != nil {
+			return nil, s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to find documents", err)
+		}
+		for _, record := range records {
+			if doc, ok := documents[record.ID]; ok {
+				doc.Data = string(record.Content)
+				doc.CreatedAt = record.CreatedAt
+			}
+		}
+	}
+
+	if includeMetadata {
+		metadataRecords, err := querier.MetadataFindByDocumentIds(ctx, s.dataSource, documentIds)
+		if err != nil {
+			return nil, s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to find document metadata", err)
+		}
+		for _, metadata := range metadataRecords {
+			if !metadata.DocumentID.Valid {
+				continue
+			}
+			if doc, ok := documents[metadata.DocumentID]; ok {
+				if doc.Metadata == nil {
+					doc.Metadata = make(map[string]string)
+				}
+				err := json.Unmarshal(metadata.Metadata, &doc.Metadata)
+				if err != nil {
+					return nil, s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to unmarshal document metadata", err)
+				}
+			}
+		}
+	}
+
+	return documents, nil
+}
+
+func (s *_NexusStoreServer) processFiles(
+	ctx context.Context,
+	objectIds []pgtype.UUID,
+	includeMetadata bool,
+) (map[pgtype.UUID]*pb.ListItem, *pb.ListResponse) {
+	files := map[pgtype.UUID]*pb.ListItem{}
+
+	if len(objectIds) <= 0 {
+		return files, nil
+	}
+
+	for _, id := range objectIds {
+		if !id.Valid {
+			continue
+		}
+		files[id] = &pb.ListItem{Id: util.MustPgtypeUUIDToString(id)}
+	}
+
+	if includeMetadata {
+		metadataRecords, err := querier.MetadataFindByObjectIds(ctx, s.dataSource, objectIds)
+		if err != nil {
+			return nil, s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to find file metadata", err)
+		}
+		for _, metadata := range metadataRecords {
+			if !metadata.ObjectID.Valid {
+				continue
+			}
+			if file, ok := files[metadata.ObjectID]; ok {
+				if file.Metadata == nil {
+					file.Metadata = make(map[string]string)
+				}
+				err := json.Unmarshal(metadata.Metadata, &file.Metadata)
+				if err != nil {
+					return nil, s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to unmarshal file metadata", err)
+				}
+			}
+		}
+	}
+
+	return files, nil
+}
+
+func (s *_NexusStoreServer) errorResponse(code nexus.Error_ErrorCode, msg string, err error) *pb.ListResponse {
 	slog.Error(fmt.Sprintf("NexusStoreServer::List() %s", msg), "err", err)
 	return &pb.ListResponse{
 		Error: &nexus.Error{
 			Code: code,
 		},
-	}, nil
+	}
 }
 
 func (s *_NexusStoreServer) buildQuery(builder *model.SqlQueryBuilder) string {
@@ -411,14 +442,20 @@ func (s *_NexusStoreServer) checkMetadataRequiredFields(entries map[string]strin
 	return nil
 }
 
-func (s *_NexusStoreServer) insertMetadata(ctx context.Context, tx dbaccess.DataSource, prefix string, uuid pgtype.UUID, metadata map[string]string) error {
+func (s *_NexusStoreServer) insertMetadata(ctx context.Context, tx dbaccess.DataSource, objectType ObjectType, uuid pgtype.UUID, metadata map[string]string) error {
 	var keys, values []string
 	var objectIDs, documentIDs []pgtype.UUID
 
 	for key, value := range metadata {
 		keys = append(keys, key)
 		values = append(values, value)
-		appendIdentifier(&objectIDs, &documentIDs, prefix, uuid)
+		if objectType == ObjectTypeFile {
+			objectIDs = append(objectIDs, uuid)
+			documentIDs = append(documentIDs, pgtype.UUID{Valid: false})
+		} else {
+			objectIDs = append(objectIDs, pgtype.UUID{Valid: false})
+			documentIDs = append(documentIDs, uuid)
+		}
 	}
 
 	// Ensure slices are aligned
@@ -438,56 +475,4 @@ func (s *_NexusStoreServer) insertMetadata(ctx context.Context, tx dbaccess.Data
 	}
 
 	return nil
-}
-
-func appendIdentifier(objectIDs, documentIDs *[]pgtype.UUID, prefix string, id pgtype.UUID) {
-	if prefix == MetadataKeyPrefixObject {
-		*objectIDs = append(*objectIDs, id)
-		*documentIDs = append(*documentIDs, pgtype.UUID{Valid: false})
-	} else {
-		*objectIDs = append(*objectIDs, pgtype.UUID{Valid: false})
-		*documentIDs = append(*documentIDs, id)
-	}
-}
-
-func stringToPgtypeUUID(uuidStr string) (pgtype.UUID, error) {
-	// Parse the string into a uuid.UUID
-	parsedUUID, err := uuid.Parse(uuidStr)
-	if err != nil {
-		return pgtype.UUID{}, err
-	}
-
-	// Create a pgtype.UUID and set the Bytes and Status
-	var pgUUID pgtype.UUID
-	pgUUID.Bytes = parsedUUID
-	pgUUID.Valid = true
-
-	return pgUUID, nil
-}
-
-func pgtypeUUIDToString(uuid pgtype.UUID) (string, error) {
-	if !uuid.Valid {
-		return "", errors.New("invalid UUID")
-	}
-
-	var buf [36]byte
-	hex.Encode(buf[:8], uuid.Bytes[:4])
-	buf[8] = '-'
-	hex.Encode(buf[9:13], uuid.Bytes[4:6])
-	buf[13] = '-'
-	hex.Encode(buf[14:18], uuid.Bytes[6:8])
-	buf[18] = '-'
-	hex.Encode(buf[19:23], uuid.Bytes[8:10])
-	buf[23] = '-'
-	hex.Encode(buf[24:], uuid.Bytes[10:])
-
-	return string(buf[:]), nil
-}
-
-func mustPgtypeUUIDToString(uuid pgtype.UUID) string {
-	s, err := pgtypeUUIDToString(uuid)
-	if err != nil {
-		panic(err)
-	}
-	return s
 }

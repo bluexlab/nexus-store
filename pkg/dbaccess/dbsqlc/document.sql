@@ -14,3 +14,12 @@ WHERE id = @id;
 SELECT *
 FROM documents
 WHERE id = ANY(@ids::UUID[]);
+
+-- name: DocumentOrObjectById :many
+SELECT documents.id as document_id, NULL as object_id
+FROM documents
+WHERE documents.id = @id
+UNION ALL
+SELECT NULL as document_id, s3_objects.id as object_id
+FROM s3_objects
+WHERE s3_objects.id = @id;

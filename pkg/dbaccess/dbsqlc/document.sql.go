@@ -64,3 +64,38 @@ func (q *Queries) DocumentInsert(ctx context.Context, db DBTX, content []byte) (
 	err := row.Scan(&i.ID, &i.Content, &i.CreatedAt)
 	return &i, err
 }
+
+const documentOrObjectById = `-- name: DocumentOrObjectById :many
+SELECT documents.id as document_id, NULL as object_id
+FROM documents
+WHERE documents.id = $1
+UNION ALL
+SELECT NULL as document_id, s3_objects.id as object_id
+FROM s3_objects
+WHERE s3_objects.id = $1
+`
+
+type DocumentOrObjectByIdRow struct {
+	DocumentID pgtype.UUID
+	ObjectID   interface{}
+}
+
+func (q *Queries) DocumentOrObjectById(ctx context.Context, db DBTX, id pgtype.UUID) ([]*DocumentOrObjectByIdRow, error) {
+	rows, err := db.Query(ctx, documentOrObjectById, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*DocumentOrObjectByIdRow
+	for rows.Next() {
+		var i DocumentOrObjectByIdRow
+		if err := rows.Scan(&i.DocumentID, &i.ObjectID); err != nil {
+			return nil, err
+		}
+		items = append(items, &i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

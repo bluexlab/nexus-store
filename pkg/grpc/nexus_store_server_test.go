@@ -18,6 +18,7 @@ import (
 	nexus "gitlab.com/navyx/nexus/nexus-store/pkg/proto/nexus_store"
 	pb "gitlab.com/navyx/nexus/nexus-store/pkg/proto/nexus_store"
 	"gitlab.com/navyx/nexus/nexus-store/pkg/storage"
+	"gitlab.com/navyx/nexus/nexus-store/pkg/util"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -306,7 +307,7 @@ func TestAddMetadata(t *testing.T) {
 		require.NoError(t, err)
 
 		req := &pb.AddMetadataRequest{
-			Key: fmt.Sprintf("object-%v", id),
+			Key: fmt.Sprintf("%v", id),
 			NewMetadata: map[string]string{
 				"Source":       "Test System",
 				"CreatorEmail": "test@example.com",
@@ -331,7 +332,7 @@ func TestAddMetadata(t *testing.T) {
 		require.NoError(t, err)
 
 		req := &pb.AddMetadataRequest{
-			Key: fmt.Sprintf("document-%v", id),
+			Key: fmt.Sprintf("%v", id),
 			NewMetadata: map[string]string{
 				"Source":       "Test System",
 				"CreatorEmail": "test@example.com",
@@ -364,7 +365,7 @@ func TestAddMetadata(t *testing.T) {
 		})
 
 		req := &pb.AddMetadataRequest{
-			Key: fmt.Sprintf("object-%v", id),
+			Key: fmt.Sprintf("%v", id),
 			NewMetadata: map[string]string{
 				"Source":       "Test System",
 				"CreatorEmail": "test@example.com",
@@ -410,7 +411,7 @@ func TestAddMetadata(t *testing.T) {
 
 		require.Error(t, err)
 		require.Equal(t, codes.InvalidArgument, status.Code(err))
-		require.Contains(t, err.Error(), "Invalid key prefix")
+		require.Contains(t, err.Error(), "Invalid UUID")
 	})
 
 	t.Run("Invalid request - object not found", func(t *testing.T) {
@@ -418,15 +419,15 @@ func TestAddMetadata(t *testing.T) {
 
 		id := uuid.New()
 		req := &pb.AddMetadataRequest{
-			Key: fmt.Sprintf("object-%v", id),
+			Key: fmt.Sprintf("%v", id),
 		}
 
 		server := NewNexusStoreServer(WithDataSource(bundle.dbPool))
 		_, err := server.AddMetadata(ctx, req)
 
 		require.Error(t, err)
-		require.Equal(t, codes.Internal, status.Code(err))
-		require.Contains(t, err.Error(), "Failed to find object")
+		require.Equal(t, codes.NotFound, status.Code(err))
+		require.Contains(t, err.Error(), "Object or document not found")
 	})
 
 	t.Run("Invalid request - document not found", func(t *testing.T) {
@@ -434,15 +435,15 @@ func TestAddMetadata(t *testing.T) {
 
 		id := uuid.New()
 		req := &pb.AddMetadataRequest{
-			Key: fmt.Sprintf("document-%v", id),
+			Key: fmt.Sprintf("%v", id),
 		}
 
 		server := NewNexusStoreServer(WithDataSource(bundle.dbPool))
 		_, err := server.AddMetadata(ctx, req)
 
 		require.Error(t, err)
-		require.Equal(t, codes.Internal, status.Code(err))
-		require.Contains(t, err.Error(), "Failed to find document")
+		require.Equal(t, codes.NotFound, status.Code(err))
+		require.Contains(t, err.Error(), "Object or document not found")
 	})
 }
 
@@ -527,9 +528,9 @@ func TestList(t *testing.T) {
 		require.Len(t, resp.Files, 1)
 
 		// Convert UUIDs to strings for comparison
-		doc1ID, err := pgtypeUUIDToString(oids[0])
+		doc1ID, err := util.PgtypeUUIDToString(oids[0])
 		require.NoError(t, err)
-		obj1ID, err := pgtypeUUIDToString(oids[2])
+		obj1ID, err := util.PgtypeUUIDToString(oids[2])
 		require.NoError(t, err)
 
 		// Check that we got the correct document and object
@@ -557,8 +558,8 @@ func TestList(t *testing.T) {
 		require.Len(t, resp.Files, 1)
 
 		// Check that we got the correct document and object
-		doc1ID, _ := pgtypeUUIDToString(oids[0])
-		obj1ID, _ := pgtypeUUIDToString(oids[2])
+		doc1ID, _ := util.PgtypeUUIDToString(oids[0])
+		obj1ID, _ := util.PgtypeUUIDToString(oids[2])
 		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Id }), doc1ID)
 		require.Contains(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Id }), obj1ID)
 		require.Empty(t, resp.Documents[0].Metadata)
@@ -586,8 +587,8 @@ func TestList(t *testing.T) {
 		require.Len(t, resp.Files, 1)
 
 		// Check that we got the correct document and object
-		doc1ID, _ := pgtypeUUIDToString(oids[0])
-		obj1ID, _ := pgtypeUUIDToString(oids[2])
+		doc1ID, _ := util.PgtypeUUIDToString(oids[0])
+		obj1ID, _ := util.PgtypeUUIDToString(oids[2])
 		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Id }), doc1ID)
 		require.Contains(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Id }), obj1ID)
 		require.Equal(t, resp.Documents[0].Metadata, map[string]string{"Source": "System1", "Purpose": "Purpose1"})
@@ -626,8 +627,8 @@ func TestList(t *testing.T) {
 		require.Len(t, resp.Files, 1)
 
 		// Check that we got the correct document and object
-		doc1ID, _ := pgtypeUUIDToString(oids[0])
-		obj1ID, _ := pgtypeUUIDToString(oids[2])
+		doc1ID, _ := util.PgtypeUUIDToString(oids[0])
+		obj1ID, _ := util.PgtypeUUIDToString(oids[2])
 		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Id }), doc1ID)
 		require.Contains(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Id }), obj1ID)
 	})
@@ -662,8 +663,8 @@ func TestList(t *testing.T) {
 		require.Len(t, resp.Files, 1)
 
 		// Check that we got the correct document and object
-		doc1ID, _ := pgtypeUUIDToString(oids[0])
-		obj1ID, _ := pgtypeUUIDToString(oids[2])
+		doc1ID, _ := util.PgtypeUUIDToString(oids[0])
+		obj1ID, _ := util.PgtypeUUIDToString(oids[2])
 		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Id }), doc1ID)
 		require.Contains(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Id }), obj1ID)
 	})
@@ -698,8 +699,8 @@ func TestList(t *testing.T) {
 		require.Len(t, resp.Files, 1)
 
 		// Check that we got the correct document and object
-		doc1ID, _ := pgtypeUUIDToString(oids[0])
-		obj1ID, _ := pgtypeUUIDToString(oids[2])
+		doc1ID, _ := util.PgtypeUUIDToString(oids[0])
+		obj1ID, _ := util.PgtypeUUIDToString(oids[2])
 		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Id }), doc1ID)
 		require.Contains(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Id }), obj1ID)
 	})
@@ -756,9 +757,9 @@ func TestList(t *testing.T) {
 		require.Len(t, resp.Files, 2)
 
 		// Check that we got the correct document and object
-		doc1ID, _ := pgtypeUUIDToString(oids[0])
-		obj1ID, _ := pgtypeUUIDToString(oids[2])
-		obj2ID, _ := pgtypeUUIDToString(oids[3])
+		doc1ID, _ := util.PgtypeUUIDToString(oids[0])
+		obj1ID, _ := util.PgtypeUUIDToString(oids[2])
+		obj2ID, _ := util.PgtypeUUIDToString(oids[3])
 		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Id }), doc1ID)
 		require.ElementsMatch(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Id }), []string{obj1ID, obj2ID})
 	})
