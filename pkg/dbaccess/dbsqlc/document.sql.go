@@ -99,3 +99,22 @@ func (q *Queries) DocumentOrObjectById(ctx context.Context, db DBTX, id pgtype.U
 	}
 	return items, nil
 }
+
+const documentUpdate = `-- name: DocumentUpdate :one
+UPDATE documents
+SET content = $1, created_at = EXTRACT(epoch FROM now())
+WHERE id = $2
+RETURNING id
+`
+
+type DocumentUpdateParams struct {
+	Content []byte
+	ID      pgtype.UUID
+}
+
+func (q *Queries) DocumentUpdate(ctx context.Context, db DBTX, arg *DocumentUpdateParams) (pgtype.UUID, error) {
+	row := db.QueryRow(ctx, documentUpdate, arg.Content, arg.ID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}

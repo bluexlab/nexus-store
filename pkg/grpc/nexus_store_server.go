@@ -64,11 +64,11 @@ func NewNexusStoreServer(opts ...NexusStoreServerOption) *_NexusStoreServer {
 }
 
 func (s *_NexusStoreServer) GetDownloadURL(ctx context.Context, req *pb.GetDownloadURLRequest) (*pb.GetDownloadURLResponse, error) {
-	slog.Debug("NexusStoreServer::GetDownloadURL() invoked", "req", req)
+	slog.Debug("GetDownloadURL() invoked", "req", req)
 
 	downloadURL, err := s.storage.GetDownloadURL(ctx, req.GetKey(), req.GetLiveTime())
 	if err != nil {
-		slog.Error("NexusStoreServer::GetDownloadURL() fails to GetDownloadURL().", "err", err)
+		slog.Error("GetDownloadURL() fails to GetDownloadURL().", "err", err)
 
 		var noSuchKey *types.NoSuchKey
 		if errors.As(err, &noSuchKey) {
@@ -89,63 +89,89 @@ func (s *_NexusStoreServer) GetDownloadURL(ctx context.Context, req *pb.GetDownl
 }
 
 func (s *_NexusStoreServer) AddDocument(ctx context.Context, req *pb.AddDocumentRequest) (*pb.AddDocumentResponse, error) {
-	slog.Debug("NexusStoreServer::AddDocument() invoked", "req", req)
+	slog.Debug("AddDocument() invoked", "req", req)
 
 	data := req.GetData()
 	if len(data) == 0 {
-		return nil, status.Errorf(codes.InvalidArgument, "Data is required")
+		return reportAddDocumentError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "Data is required", nil)
 	}
 
 	metadata := req.GetMetadata()
-	err := s.checkMetadataRequiredFields(metadata)
+	err := checkMetadataRequiredFields(metadata)
 	if err != nil {
-		slog.Error("NexusStoreServer::UploadDocument() fails to check metadata required fields.", "err", err)
-		return nil, err
+		return reportAddDocumentError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, err.Error(), err)
 	}
 
-	var documentId string
-	err = dbaccess.WithTx(ctx, s.dataSource, func(ctx context.Context, tx dbaccess.DataSource) error {
-		// Insert data into document table
+	documentId, err := dbaccess.WithTxV(ctx, s.dataSource, func(ctx context.Context, tx dbaccess.DataSource) (string, error) {
 		document, err := querier.DocumentInsert(ctx, tx, []byte(data))
 		if err != nil {
-			slog.Error("NexusStoreServer::UploadDocument() fails to insert into document table.", "err", err)
-			return status.Errorf(codes.Internal, "Failed to insert into document table: %v", err)
+			return "", status.Errorf(codes.Internal, "Failed to insert into document table: %v", err)
 		}
 
-		documentId, err = util.PgtypeUUIDToString(document.ID)
+		documentId, err := util.PgtypeUUIDToString(document.ID)
 		if err != nil {
-			slog.Error("NexusStoreServer::UploadDocument() fails to convert UUID to string.", "err", err)
-			return status.Errorf(codes.Internal, "Failed to convert UUID to string: %v", err)
+			return "", status.Errorf(codes.Internal, "Failed to convert UUID to string: %v", err)
 		}
 
-		if err := s.insertMetadata(ctx, tx, ObjectTypeDocument, document.ID, metadata); err != nil {
-			slog.Error("NexusStoreServer::UploadDocument() fails to insert metadata.", "err", err)
-			return err
+		if err := updateMetadata(ctx, tx, document.ID, metadata); err != nil {
+			return "", err
 		}
 
-		return nil
+		return documentId, nil
 	})
 	if err != nil {
-		slog.Error("NexusStoreServer::UploadDocument() fails to execute transaction.", "err", err)
-		return nil, err
+		return reportAddDocumentError(nexus.Error_NEXUS_STORE_INTERNAL_ERROR, "fails to execute transaction", err)
 	}
 
 	return &pb.AddDocumentResponse{
-		Id: documentId,
+		Key: documentId,
 	}, nil
 }
 
+func (s *_NexusStoreServer) UpdateDocument(ctx context.Context, req *pb.UpdateDocumentRequest) (*pb.UpdateDocumentResponse, error) {
+	slog.Debug("UpdateDocument() invoked", "req", req)
+
+	data := req.GetData()
+	if len(data) == 0 {
+		return reportUpdateDocumentError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "Data is required", nil)
+	}
+
+	key := req.GetKey()
+	if len(key) == 0 {
+		return reportUpdateDocumentError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "Key is required", nil)
+	}
+
+	keyUuid, err := util.StringToPgtypeUUID(key)
+	if err != nil {
+		return reportUpdateDocumentError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "Invalid UUID", err)
+	}
+
+	documentId, err := querier.DocumentUpdate(ctx, s.dataSource, &dbsqlc.DocumentUpdateParams{
+		ID:      keyUuid,
+		Content: []byte(data),
+	})
+
+	if err != nil {
+		return reportUpdateDocumentError(nexus.Error_NEXUS_STORE_INTERNAL_ERROR, "Failed to update document: "+err.Error(), err)
+	}
+	if !documentId.Valid {
+		return reportUpdateDocumentError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "Document not found", nil)
+	}
+
+	return &pb.UpdateDocumentResponse{}, nil
+}
+
 func (s *_NexusStoreServer) AddFile(ctx context.Context, req *pb.AddFileRequest) (*pb.AddFileResponse, error) {
-	slog.Debug("NexusStoreServer::AddFile() invoked", "FileName", req.GetFileName(), "AutoExpire", req.GetAutoExpire())
+	slog.Debug("AddFile() invoked", "FileName", req.GetFileName(), "AutoExpire", req.GetAutoExpire())
 
 	if len(req.GetData()) == 0 {
 		return nil, status.Errorf(codes.InvalidArgument, "Data is required")
 	}
 
 	metadata := req.GetMetadata()
-	err := s.checkMetadataRequiredFields(metadata)
+	err := checkMetadataRequiredFields(metadata)
 	if err != nil {
-		slog.Error("NexusStoreServer::AddFile() fails to check metadata required fields.", "err", err)
+		slog.Error("AddFile() fails to check metadata required fields.", "err", err)
 		return nil, err
 	}
 	metadata["FileName"] = req.GetFileName()
@@ -156,13 +182,13 @@ func (s *_NexusStoreServer) AddFile(ctx context.Context, req *pb.AddFileRequest)
 		// Add a record to the s3Object table
 		s3Object, err := querier.S3ObjectInsert(ctx, tx)
 		if err != nil {
-			slog.Error("NexusStoreServer::AddFile() fails to insert into s3Object table.", "err", err)
+			slog.Error("AddFile() fails to insert into s3Object table.", "err", err)
 			return status.Errorf(codes.Internal, "Failed to insert into s3Object table: %v", err)
 		}
 
 		objectId, err = util.PgtypeUUIDToString(s3Object.ID)
 		if err != nil {
-			slog.Error("NexusStoreServer::AddFile() fails to convert UUID to string.", "err", err)
+			slog.Error("AddFile() fails to convert UUID to string.", "err", err)
 			return status.Errorf(codes.Internal, "Failed to convert UUID to string: %v", err)
 		}
 
@@ -173,15 +199,15 @@ func (s *_NexusStoreServer) AddFile(ctx context.Context, req *pb.AddFileRequest)
 			return status.Errorf(codes.Internal, err.Error())
 		}
 
-		if err := s.insertMetadata(ctx, tx, ObjectTypeFile, s3Object.ID, metadata); err != nil {
-			slog.Error("NexusStoreServer::AddFile() fails to insert metadata.", "err", err)
+		if err := updateMetadata(ctx, tx, s3Object.ID, metadata); err != nil {
+			slog.Error("AddFile() fails to insert metadata.", "err", err)
 			return err
 		}
 
 		return nil
 	})
 	if err != nil {
-		slog.Error("NexusStoreServer::AddFile() fails to execute transaction.", "err", err)
+		slog.Error("AddFile() fails to execute transaction.", "err", err)
 		return nil, err
 	}
 
@@ -204,49 +230,28 @@ func (s *_NexusStoreServer) UntagAutoExpire(ctx context.Context, req *pb.UntagAu
 }
 
 func (s *_NexusStoreServer) AddMetadata(ctx context.Context, req *pb.AddMetadataRequest) (*pb.AddMetadataResponse, error) {
-	slog.Debug("NexusStoreServer::AddMetadata() invoked", "req", req)
+	slog.Debug("AddMetadata() invoked", "key", req.GetKey(), "metadata", req.GetMetadata())
 	key := req.GetKey()
 	if len(key) == 0 {
-		return nil, status.Errorf(codes.InvalidArgument, "Key is required")
+		return reportAddMetadataError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "Key is required", nil)
 	}
 	keyUuid, err := util.StringToPgtypeUUID(key)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "Invalid UUID: %v", err)
+		return reportAddMetadataError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "Invalid UUID", err)
 	}
 
-	tx, err := s.dataSource.Begin(ctx)
-	if err != nil {
-		slog.Error("NexusStoreServer::AddMetadata() fails to begin transaction.", "err", err)
-		return nil, status.Errorf(codes.Internal, "Failed to begin transaction: %v", err)
-	}
-	defer tx.Rollback(ctx)
-
-	recs, err := querier.DocumentOrObjectById(ctx, tx, keyUuid)
-	if err != nil {
-		slog.Error("NexusStoreServer::AddMetadata() fails to find object or document.", "err", err)
-		return nil, status.Errorf(codes.Internal, "Failed to find object or document: %v", err)
-	}
-	if len(recs) == 0 {
-		slog.Error("NexusStoreServer::AddMetadata() object or document not found", "key", key)
-		return nil, status.Errorf(codes.NotFound, "Object or document not found")
-	}
-
-	objectType := lo.Ternary(recs[0].DocumentID.Valid, ObjectTypeDocument, ObjectTypeFile)
-	if err := s.insertMetadata(ctx, tx, objectType, keyUuid, req.GetNewMetadata()); err != nil {
-		slog.Error("NexusStoreServer::AddMetadata() fails to insert metadata.", "err", err)
-		return nil, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		slog.Error("NexusStoreServer::AddMetadata() fails to commit transaction.", "err", err)
-		return nil, status.Errorf(codes.Internal, "Failed to commit transaction: %v", err)
+	if err := addMetadata(ctx, s.dataSource, keyUuid, req.GetMetadata()); err != nil {
+		if err == pgx.ErrNoRows {
+			return reportAddMetadataError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "Object or document not found", err)
+		}
+		return reportAddMetadataError(nexus.Error_NEXUS_STORE_INTERNAL_ERROR, "Failed to update metadata", err)
 	}
 
 	return &pb.AddMetadataResponse{}, nil
 }
 
 func (s *_NexusStoreServer) List(ctx context.Context, req *pb.ListRequest) (*pb.ListResponse, error) {
-	slog.Debug("NexusStoreServer::List() invoked", "req", req)
+	slog.Debug("List() invoked", "req", req)
 
 	if req == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Request is required")
@@ -254,32 +259,32 @@ func (s *_NexusStoreServer) List(ctx context.Context, req *pb.ListRequest) (*pb.
 
 	filter, err := model.CreateListFilter(req.GetFilter())
 	if err != nil {
-		return s.errorResponse(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "fails to create list filter", err), nil
+		return reportListError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "fails to create list filter", err), nil
 	}
 
 	builder, err := filter.SqlQuery()
 	if err != nil {
-		return s.errorResponse(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "fails to create list filter", err), nil
+		return reportListError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "fails to create list filter", err), nil
 	}
-	query := s.buildQuery(builder)
-	slog.Info("NexusStoreServer::List() query", "query", query, "whereArgs", builder.WhereArgs, "havingArgs", builder.HavingArgs)
+	query := buildQuery(builder)
+	slog.Info("List() query", "query", query, "whereArgs", builder.WhereArgs, "havingArgs", builder.HavingArgs)
 
 	args := append(builder.WhereArgs, builder.HavingArgs...)
 	rows, err := s.dataSource.Query(ctx, query, args...)
 	if err != nil {
-		return s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to execute query", err), nil
+		return reportListError(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to execute query", err), nil
 	}
 	defer rows.Close()
 
-	documentIds, objectIds := s.scanRows(rows)
-	slog.Debug("NexusStoreServer::List() documentIds", "documentIds", documentIds, "objectIds", objectIds)
+	documentIds, objectIds := scanRows(rows)
+	slog.Debug("List() documentIds", "documentIds", documentIds, "objectIds", objectIds)
 
-	documents, errResp := s.processDocuments(ctx, documentIds, req.GetIncludeDocuments(), req.GetIncludeMetadata())
+	documents, errResp := processDocuments(ctx, s.dataSource, documentIds, req.GetIncludeDocuments(), req.GetIncludeMetadata())
 	if errResp != nil {
 		return errResp, nil
 	}
 
-	files, errResp := s.processFiles(ctx, objectIds, req.GetIncludeMetadata())
+	files, errResp := processFiles(ctx, s.dataSource, objectIds, req.GetIncludeMetadata())
 	if errResp != nil {
 		return errResp, nil
 	}
@@ -290,8 +295,9 @@ func (s *_NexusStoreServer) List(ctx context.Context, req *pb.ListRequest) (*pb.
 	}, nil
 }
 
-func (s *_NexusStoreServer) processDocuments(
+func processDocuments(
 	ctx context.Context,
+	dataSource dbaccess.DataSource,
 	documentIds []pgtype.UUID,
 	includeDocuments,
 	includeMetadata bool,
@@ -306,13 +312,13 @@ func (s *_NexusStoreServer) processDocuments(
 		if !id.Valid {
 			continue
 		}
-		documents[id] = &pb.ListItem{Id: util.MustPgtypeUUIDToString(id)}
+		documents[id] = &pb.ListItem{Key: util.MustPgtypeUUIDToString(id)}
 	}
 
 	if includeDocuments {
-		records, err := querier.DocumentFindByIds(ctx, s.dataSource, documentIds)
+		records, err := querier.DocumentFindByIds(ctx, dataSource, documentIds)
 		if err != nil {
-			return nil, s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to find documents", err)
+			return nil, reportListError(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to find documents", err)
 		}
 		for _, record := range records {
 			if doc, ok := documents[record.ID]; ok {
@@ -323,9 +329,9 @@ func (s *_NexusStoreServer) processDocuments(
 	}
 
 	if includeMetadata {
-		metadataRecords, err := querier.MetadataFindByDocumentIds(ctx, s.dataSource, documentIds)
+		metadataRecords, err := querier.MetadataFindByDocumentIds(ctx, dataSource, documentIds)
 		if err != nil {
-			return nil, s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to find document metadata", err)
+			return nil, reportListError(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to find document metadata", err)
 		}
 		for _, metadata := range metadataRecords {
 			if !metadata.DocumentID.Valid {
@@ -337,7 +343,7 @@ func (s *_NexusStoreServer) processDocuments(
 				}
 				err := json.Unmarshal(metadata.Metadata, &doc.Metadata)
 				if err != nil {
-					return nil, s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to unmarshal document metadata", err)
+					return nil, reportListError(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to unmarshal document metadata", err)
 				}
 			}
 		}
@@ -346,8 +352,9 @@ func (s *_NexusStoreServer) processDocuments(
 	return documents, nil
 }
 
-func (s *_NexusStoreServer) processFiles(
+func processFiles(
 	ctx context.Context,
+	dataSource dbaccess.DataSource,
 	objectIds []pgtype.UUID,
 	includeMetadata bool,
 ) (map[pgtype.UUID]*pb.ListItem, *pb.ListResponse) {
@@ -361,13 +368,13 @@ func (s *_NexusStoreServer) processFiles(
 		if !id.Valid {
 			continue
 		}
-		files[id] = &pb.ListItem{Id: util.MustPgtypeUUIDToString(id)}
+		files[id] = &pb.ListItem{Key: util.MustPgtypeUUIDToString(id)}
 	}
 
 	if includeMetadata {
-		metadataRecords, err := querier.MetadataFindByObjectIds(ctx, s.dataSource, objectIds)
+		metadataRecords, err := querier.MetadataFindByObjectIds(ctx, dataSource, objectIds)
 		if err != nil {
-			return nil, s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to find file metadata", err)
+			return nil, reportListError(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to find file metadata", err)
 		}
 		for _, metadata := range metadataRecords {
 			if !metadata.ObjectID.Valid {
@@ -379,7 +386,7 @@ func (s *_NexusStoreServer) processFiles(
 				}
 				err := json.Unmarshal(metadata.Metadata, &file.Metadata)
 				if err != nil {
-					return nil, s.errorResponse(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to unmarshal file metadata", err)
+					return nil, reportListError(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to unmarshal file metadata", err)
 				}
 			}
 		}
@@ -388,16 +395,7 @@ func (s *_NexusStoreServer) processFiles(
 	return files, nil
 }
 
-func (s *_NexusStoreServer) errorResponse(code nexus.Error_ErrorCode, msg string, err error) *pb.ListResponse {
-	slog.Error(fmt.Sprintf("NexusStoreServer::List() %s", msg), "err", err)
-	return &pb.ListResponse{
-		Error: &nexus.Error{
-			Code: code,
-		},
-	}
-}
-
-func (s *_NexusStoreServer) buildQuery(builder *model.SqlQueryBuilder) string {
+func buildQuery(builder *model.SqlQueryBuilder) string {
 	sqlQuery := fmt.Sprintf(
 		"SELECT object_id, document_id FROM metadatas WHERE %s GROUP BY object_id, document_id HAVING %s;",
 		builder.WhereClause,
@@ -413,12 +411,12 @@ func (s *_NexusStoreServer) buildQuery(builder *model.SqlQueryBuilder) string {
 	return sqlQuery
 }
 
-func (s *_NexusStoreServer) scanRows(rows pgx.Rows) ([]pgtype.UUID, []pgtype.UUID) {
+func scanRows(rows pgx.Rows) ([]pgtype.UUID, []pgtype.UUID) {
 	var documentIds, objectIds []pgtype.UUID
 	for rows.Next() {
 		var documentId, objectId *pgtype.UUID
 		if err := rows.Scan(&objectId, &documentId); err != nil {
-			slog.Error("NexusStoreServer::List() fails to scan row", "err", err)
+			slog.Error("List() fails to scan row", "err", err)
 			continue
 		}
 		slog.Info("scan documentId", "documentId", lo.FromPtr(documentId), "objectId", lo.FromPtr(objectId))
@@ -432,7 +430,47 @@ func (s *_NexusStoreServer) scanRows(rows pgx.Rows) ([]pgtype.UUID, []pgtype.UUI
 	return documentIds, objectIds
 }
 
-func (s *_NexusStoreServer) checkMetadataRequiredFields(entries map[string]string) error {
+func addMetadata(ctx context.Context, tx dbaccess.DataSource, uuid pgtype.UUID, metadata map[string]string) error {
+	var keys, values []string
+	for key, value := range metadata {
+		keys = append(keys, key)
+		values = append(values, value)
+	}
+
+	// Ensure slices are aligned
+	if len(keys) != len(values) {
+		return status.Errorf(codes.Internal, "Mismatch in slice lengths")
+	}
+
+	_, err := querier.MetadataInsertBatch(ctx, tx, &dbsqlc.MetadataInsertBatchParams{
+		ID:     uuid,
+		Keys:   keys,
+		Values: values,
+	})
+	return err
+}
+
+func updateMetadata(ctx context.Context, tx dbaccess.DataSource, uuid pgtype.UUID, metadata map[string]string) error {
+	var keys, values []string
+	for key, value := range metadata {
+		keys = append(keys, key)
+		values = append(values, value)
+	}
+
+	// Ensure slices are aligned
+	if len(keys) != len(values) {
+		return status.Errorf(codes.Internal, "Mismatch in slice lengths")
+	}
+
+	_, err := querier.MetadataUpdateBatch(ctx, tx, &dbsqlc.MetadataUpdateBatchParams{
+		ID:     uuid,
+		Keys:   keys,
+		Values: values,
+	})
+	return err
+}
+
+func checkMetadataRequiredFields(entries map[string]string) error {
 	requiredFields := []string{"Source", "CreatorEmail", "CustomerName", "Purpose", "ContentType"}
 	for _, field := range requiredFields {
 		if _, ok := entries[field]; !ok {
@@ -442,37 +480,58 @@ func (s *_NexusStoreServer) checkMetadataRequiredFields(entries map[string]strin
 	return nil
 }
 
-func (s *_NexusStoreServer) insertMetadata(ctx context.Context, tx dbaccess.DataSource, objectType ObjectType, uuid pgtype.UUID, metadata map[string]string) error {
-	var keys, values []string
-	var objectIDs, documentIDs []pgtype.UUID
+func reportAddDocumentError(code nexus.Error_ErrorCode, message string, err error) (*pb.AddDocumentResponse, error) {
+	slog.Error("AddDocument()", "code", code, "message", message, "err", err)
+	return &pb.AddDocumentResponse{
+		Error: &nexus.Error{Code: code, Message: message},
+	}, nil
+}
 
-	for key, value := range metadata {
-		keys = append(keys, key)
-		values = append(values, value)
-		if objectType == ObjectTypeFile {
-			objectIDs = append(objectIDs, uuid)
-			documentIDs = append(documentIDs, pgtype.UUID{Valid: false})
-		} else {
-			objectIDs = append(objectIDs, pgtype.UUID{Valid: false})
-			documentIDs = append(documentIDs, uuid)
-		}
+func reportUpdateDocumentError(code nexus.Error_ErrorCode, message string, err error) (*pb.UpdateDocumentResponse, error) {
+	slog.Error("UpdateDocument()", "code", code, "message", message, "err", err)
+	return &pb.UpdateDocumentResponse{
+		Error: &nexus.Error{Code: code, Message: message},
+	}, nil
+}
+
+func reportAddMetadataError(code nexus.Error_ErrorCode, msg string, err error) (*pb.AddMetadataResponse, error) {
+	slog.Error("AddMetadata()", "code", code, "message", msg, "err", err)
+	return &pb.AddMetadataResponse{
+		Error: &nexus.Error{Code: code, Message: msg},
+	}, nil
+}
+
+func reportListError(code nexus.Error_ErrorCode, msg string, err error) *pb.ListResponse {
+	slog.Error("List()", "code", code, "message", msg, "err", err)
+	return &pb.ListResponse{
+		Error: &nexus.Error{Code: code, Message: msg},
 	}
+}
 
-	// Ensure slices are aligned
-	if len(keys) != len(values) || len(keys) != len(objectIDs) || len(keys) != len(documentIDs) {
-		return status.Errorf(codes.Internal, "Mismatch in slice lengths")
+func (s *_NexusStoreServer) UpdateMetadata(ctx context.Context, req *pb.UpdateMetadataRequest) (*pb.UpdateMetadataResponse, error) {
+	slog.Debug("UpdateMetadata() invoked", "req", req)
+	key := req.GetKey()
+	if len(key) == 0 {
+		return reportUpdateMetadataError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "Key is required", nil)
 	}
-
-	// Perform batch insert
-	err := querier.MetadataInsertBatch(ctx, tx, &dbsqlc.MetadataInsertBatchParams{
-		ObjectIds:   objectIDs,
-		DocumentIds: documentIDs,
-		Keys:        keys,
-		Values:      values,
-	})
+	keyUuid, err := util.StringToPgtypeUUID(key)
 	if err != nil {
-		return status.Errorf(codes.Internal, "Failed to add metadata: %v", err)
+		return reportUpdateMetadataError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "Invalid UUID", err)
 	}
 
-	return nil
+	if err := updateMetadata(ctx, s.dataSource, keyUuid, req.GetMetadata()); err != nil {
+		if err == pgx.ErrNoRows {
+			return reportUpdateMetadataError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "Object or document not found", err)
+		}
+		return reportUpdateMetadataError(nexus.Error_NEXUS_STORE_INTERNAL_ERROR, "Failed to update metadata", err)
+	}
+
+	return &pb.UpdateMetadataResponse{}, nil
+}
+
+func reportUpdateMetadataError(code nexus.Error_ErrorCode, msg string, err error) (*pb.UpdateMetadataResponse, error) {
+	slog.Error("UpdateMetadata()", "code", code, "message", msg, "err", err)
+	return &pb.UpdateMetadataResponse{
+		Error: &nexus.Error{Code: code, Message: msg},
+	}, nil
 }

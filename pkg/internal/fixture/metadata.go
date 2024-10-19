@@ -11,7 +11,7 @@ import (
 func InsertMetadata(t *testing.T, ctx context.Context, querier dbsqlc.Querier, source dbaccess.DataSource, params *dbsqlc.MetadataInsertBatchParams) {
 	t.Helper()
 
-	err := querier.MetadataInsertBatch(ctx, source, params)
+	_, err := querier.MetadataInsertBatch(ctx, source, params)
 	if err != nil {
 		t.Fatalf("Failed to insert metadata: %v", err)
 	}

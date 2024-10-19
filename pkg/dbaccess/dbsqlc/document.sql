@@ -5,6 +5,12 @@ INSERT INTO documents (
     @content
 ) RETURNING *;
 
+-- name: DocumentUpdate :one
+UPDATE documents
+SET content = @content, created_at = EXTRACT(epoch FROM now())
+WHERE id = @id
+RETURNING id;
+
 -- name: DocumentFindById :one
 SELECT *
 FROM documents

@@ -14,6 +14,7 @@ service NexusStore {
   rpc AddFile(AddFileRequest) returns (AddFileResponse) {
     option (google.api.http) = {
       post: "/v1/store/add-file"
+      body: "*"
     };
   }
   rpc RemoveFile(RemoveFileRequest) returns (RemoveFileResponse) {
@@ -24,11 +25,13 @@ service NexusStore {
   rpc TagAutoExpire(TagAutoExpireRequest) returns (TagAutoExpireResponse) {
     option (google.api.http) = {
       post: "/v1/store/tag-auto-expire"
+      body: "*"
     };
   }
   rpc UntagAutoExpire(UntagAutoExpireRequest) returns (UntagAutoExpireResponse) {
     option (google.api.http) = {
       post: "/v1/store/untag-auto-expire"
+      body: "*"
     };
   }
 
@@ -36,6 +39,14 @@ service NexusStore {
   rpc AddDocument(AddDocumentRequest) returns (AddDocumentResponse) {
     option (google.api.http) = {
       post: "/v1/store/add-document"
+      body: "*"
+    };
+  }
+
+  rpc UpdateDocument(UpdateDocumentRequest) returns (UpdateDocumentResponse) {
+    option (google.api.http) = {
+      post: "/v1/store/update-document"
+      body: "*"
     };
   }
 
@@ -43,6 +54,14 @@ service NexusStore {
   rpc AddMetadata(AddMetadataRequest) returns (AddMetadataResponse) {
     option (google.api.http) = {
       post: "/v1/store/add-metadata"
+      body: "*"
+    };
+  }
+
+  rpc UpdateMetadata(UpdateMetadataRequest) returns (UpdateMetadataResponse) {
+    option (google.api.http) = {
+      post: "/v1/store/update-metadata"
+      body: "*"
     };
   }
 
@@ -71,6 +90,7 @@ message Error {
   }
 
   ErrorCode code = 1;
+  string message = 2;
 }
 
 message MetadataEntry {
@@ -128,10 +148,19 @@ message UntagAutoExpireResponse {
 
 message AddMetadataRequest {
   string key = 1;
-  map<string, string> new_metadata = 2; // Other attributes in key-value pairs.
+  map<string, string> metadata = 2; // Other attributes in key-value pairs.
 }
 
 message AddMetadataResponse {
+  Error error = 1;
+}
+
+message UpdateMetadataRequest {
+  string key = 1;
+  map<string, string> metadata = 2; // Other attributes in key-value pairs.
+}
+
+message UpdateMetadataResponse {
   Error error = 1;
 }
 
@@ -142,7 +171,16 @@ message AddDocumentRequest {
 
 message AddDocumentResponse {
   Error error = 1;
-  string id = 2;
+  string key = 2;
+}
+
+message UpdateDocumentRequest {
+  string key = 1;
+  string data = 2; // Arbitrary data in valid JSON format
+}
+
+message UpdateDocumentResponse {
+  Error error = 1;
 }
 
 message ListRequest {
@@ -152,7 +190,7 @@ message ListRequest {
 }
 
 message ListItem {
-  string id = 1;
+  string key = 1;
   int64 created_at = 2;
   map<string, string> metadata = 3;
   string data = 4;
@@ -170,8 +208,10 @@ message ListFilter {
     EQUAL = 1;
     NOT_EQUAL = 2;
     CONTAINS = 3;
+    HAS_KEYS = 4;
     OR_GROUP = 20;
     AND_GROUP = 21;
+    NOT = 22;
   }
 
   // which kind of Filter.

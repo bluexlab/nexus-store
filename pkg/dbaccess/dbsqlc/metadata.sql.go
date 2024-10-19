@@ -120,7 +120,11 @@ INSERT INTO metadatas (
     $3,
     $4
 )
-ON CONFLICT (object_id, document_id, key, value) DO NOTHING
+ON CONFLICT (
+    COALESCE(object_id,'00000000-0000-0000-0000-000000000000'),
+    COALESCE(document_id,'00000000-0000-0000-0000-000000000000'),
+    key
+) DO UPDATE SET value = $4
 RETURNING object_id, document_id, key, value, created_at
 `
 
@@ -149,25 +153,88 @@ func (q *Queries) MetadataInsert(ctx context.Context, db DBTX, arg *MetadataInse
 	return &i, err
 }
 
-const metadataInsertBatch = `-- name: MetadataInsertBatch :exec
-INSERT INTO metadatas (object_id, document_id, key, value)
-SELECT unnest($1::uuid[]), unnest($2::uuid[]), unnest($3::text[]), unnest($4::text[])
-ON CONFLICT (object_id, document_id, key, value) DO NOTHING
+const metadataInsertBatch = `-- name: MetadataInsertBatch :one
+WITH document_or_object_id AS (
+  SELECT documents.id as document_id, NULL as object_id
+  FROM documents
+  WHERE documents.id = $1::UUID
+  UNION ALL
+  SELECT NULL as document_id, s3_objects.id as object_id
+  FROM s3_objects
+  WHERE s3_objects.id = $1::UUID
+), insert_metadata AS (
+  INSERT INTO metadatas (object_id, document_id, key, value)
+  SELECT doid.object_id, doid.document_id, unnest($2::text[]), unnest($3::text[])
+  FROM document_or_object_id as doid
+  ON CONFLICT (
+    COALESCE(object_id,'00000000-0000-0000-0000-000000000000'),
+    COALESCE(document_id,'00000000-0000-0000-0000-000000000000'),
+    key
+  ) DO UPDATE SET value = EXCLUDED.value
+)
+SELECT document_id, object_id FROM document_or_object_id
 `
 
 type MetadataInsertBatchParams struct {
-	ObjectIds   []pgtype.UUID
-	DocumentIds []pgtype.UUID
-	Keys        []string
-	Values      []string
+	ID     pgtype.UUID
+	Keys   []string
+	Values []string
 }
 
-func (q *Queries) MetadataInsertBatch(ctx context.Context, db DBTX, arg *MetadataInsertBatchParams) error {
-	_, err := db.Exec(ctx, metadataInsertBatch,
-		arg.ObjectIds,
-		arg.DocumentIds,
-		arg.Keys,
-		arg.Values,
-	)
-	return err
+type MetadataInsertBatchRow struct {
+	DocumentID pgtype.UUID
+	ObjectID   interface{}
+}
+
+func (q *Queries) MetadataInsertBatch(ctx context.Context, db DBTX, arg *MetadataInsertBatchParams) (*MetadataInsertBatchRow, error) {
+	row := db.QueryRow(ctx, metadataInsertBatch, arg.ID, arg.Keys, arg.Values)
+	var i MetadataInsertBatchRow
+	err := row.Scan(&i.DocumentID, &i.ObjectID)
+	return &i, err
+}
+
+const metadataUpdateBatch = `-- name: MetadataUpdateBatch :one
+WITH document_or_object_id AS (
+  SELECT documents.id as document_id, NULL as object_id
+  FROM documents
+  WHERE documents.id = $1::UUID
+  UNION ALL
+  SELECT NULL as document_id, s3_objects.id as object_id
+  FROM s3_objects
+  WHERE s3_objects.id = $1::UUID
+), remove_unused_metadata AS (
+  DELETE FROM metadatas
+  WHERE (object_id = $1::UUID OR document_id = $1::UUID)
+    AND key NOT IN (SELECT unnest($2::text[]))
+), key_value_pairs AS (
+  SELECT unnest($2::text[]) AS key, unnest($3::text[]) AS value
+), insert_metadata AS (
+  INSERT INTO metadatas (object_id, document_id, key, value)
+  SELECT doid.object_id, doid.document_id, unnest($2::text[]), unnest($3::text[])
+  FROM document_or_object_id as doid
+  ON CONFLICT (
+    COALESCE(object_id,'00000000-0000-0000-0000-000000000000'),
+    COALESCE(document_id,'00000000-0000-0000-0000-000000000000'),
+    key
+  ) DO UPDATE SET value = EXCLUDED.value
+)
+SELECT document_id, object_id FROM document_or_object_id
+`
+
+type MetadataUpdateBatchParams struct {
+	ID     pgtype.UUID
+	Keys   []string
+	Values []string
+}
+
+type MetadataUpdateBatchRow struct {
+	DocumentID pgtype.UUID
+	ObjectID   interface{}
+}
+
+func (q *Queries) MetadataUpdateBatch(ctx context.Context, db DBTX, arg *MetadataUpdateBatchParams) (*MetadataUpdateBatchRow, error) {
+	row := db.QueryRow(ctx, metadataUpdateBatch, arg.ID, arg.Keys, arg.Values)
+	var i MetadataUpdateBatchRow
+	err := row.Scan(&i.DocumentID, &i.ObjectID)
+	return &i, err
 }

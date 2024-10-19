@@ -25,7 +25,9 @@ const (
 	NexusStore_TagAutoExpire_FullMethodName   = "/NexusStore/TagAutoExpire"
 	NexusStore_UntagAutoExpire_FullMethodName = "/NexusStore/UntagAutoExpire"
 	NexusStore_AddDocument_FullMethodName     = "/NexusStore/AddDocument"
+	NexusStore_UpdateDocument_FullMethodName  = "/NexusStore/UpdateDocument"
 	NexusStore_AddMetadata_FullMethodName     = "/NexusStore/AddMetadata"
+	NexusStore_UpdateMetadata_FullMethodName  = "/NexusStore/UpdateMetadata"
 	NexusStore_List_FullMethodName            = "/NexusStore/List"
 )
 
@@ -41,8 +43,10 @@ type NexusStoreClient interface {
 	UntagAutoExpire(ctx context.Context, in *UntagAutoExpireRequest, opts ...grpc.CallOption) (*UntagAutoExpireResponse, error)
 	// API for semi-structure data
 	AddDocument(ctx context.Context, in *AddDocumentRequest, opts ...grpc.CallOption) (*AddDocumentResponse, error)
+	UpdateDocument(ctx context.Context, in *UpdateDocumentRequest, opts ...grpc.CallOption) (*UpdateDocumentResponse, error)
 	// API for both unstructure and semi-structure data
 	AddMetadata(ctx context.Context, in *AddMetadataRequest, opts ...grpc.CallOption) (*AddMetadataResponse, error)
+	UpdateMetadata(ctx context.Context, in *UpdateMetadataRequest, opts ...grpc.CallOption) (*UpdateMetadataResponse, error)
 	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
 }
 
@@ -114,10 +118,30 @@ func (c *nexusStoreClient) AddDocument(ctx context.Context, in *AddDocumentReque
 	return out, nil
 }
 
+func (c *nexusStoreClient) UpdateDocument(ctx context.Context, in *UpdateDocumentRequest, opts ...grpc.CallOption) (*UpdateDocumentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateDocumentResponse)
+	err := c.cc.Invoke(ctx, NexusStore_UpdateDocument_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *nexusStoreClient) AddMetadata(ctx context.Context, in *AddMetadataRequest, opts ...grpc.CallOption) (*AddMetadataResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AddMetadataResponse)
 	err := c.cc.Invoke(ctx, NexusStore_AddMetadata_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nexusStoreClient) UpdateMetadata(ctx context.Context, in *UpdateMetadataRequest, opts ...grpc.CallOption) (*UpdateMetadataResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateMetadataResponse)
+	err := c.cc.Invoke(ctx, NexusStore_UpdateMetadata_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -146,8 +170,10 @@ type NexusStoreServer interface {
 	UntagAutoExpire(context.Context, *UntagAutoExpireRequest) (*UntagAutoExpireResponse, error)
 	// API for semi-structure data
 	AddDocument(context.Context, *AddDocumentRequest) (*AddDocumentResponse, error)
+	UpdateDocument(context.Context, *UpdateDocumentRequest) (*UpdateDocumentResponse, error)
 	// API for both unstructure and semi-structure data
 	AddMetadata(context.Context, *AddMetadataRequest) (*AddMetadataResponse, error)
+	UpdateMetadata(context.Context, *UpdateMetadataRequest) (*UpdateMetadataResponse, error)
 	List(context.Context, *ListRequest) (*ListResponse, error)
 	mustEmbedUnimplementedNexusStoreServer()
 }
@@ -177,8 +203,14 @@ func (UnimplementedNexusStoreServer) UntagAutoExpire(context.Context, *UntagAuto
 func (UnimplementedNexusStoreServer) AddDocument(context.Context, *AddDocumentRequest) (*AddDocumentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddDocument not implemented")
 }
+func (UnimplementedNexusStoreServer) UpdateDocument(context.Context, *UpdateDocumentRequest) (*UpdateDocumentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateDocument not implemented")
+}
 func (UnimplementedNexusStoreServer) AddMetadata(context.Context, *AddMetadataRequest) (*AddMetadataResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddMetadata not implemented")
+}
+func (UnimplementedNexusStoreServer) UpdateMetadata(context.Context, *UpdateMetadataRequest) (*UpdateMetadataResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateMetadata not implemented")
 }
 func (UnimplementedNexusStoreServer) List(context.Context, *ListRequest) (*ListResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method List not implemented")
@@ -312,6 +344,24 @@ func _NexusStore_AddDocument_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NexusStore_UpdateDocument_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateDocumentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NexusStoreServer).UpdateDocument(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NexusStore_UpdateDocument_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NexusStoreServer).UpdateDocument(ctx, req.(*UpdateDocumentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _NexusStore_AddMetadata_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AddMetadataRequest)
 	if err := dec(in); err != nil {
@@ -326,6 +376,24 @@ func _NexusStore_AddMetadata_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NexusStoreServer).AddMetadata(ctx, req.(*AddMetadataRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NexusStore_UpdateMetadata_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateMetadataRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NexusStoreServer).UpdateMetadata(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NexusStore_UpdateMetadata_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NexusStoreServer).UpdateMetadata(ctx, req.(*UpdateMetadataRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -380,8 +448,16 @@ var NexusStore_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _NexusStore_AddDocument_Handler,
 		},
 		{
+			MethodName: "UpdateDocument",
+			Handler:    _NexusStore_UpdateDocument_Handler,
+		},
+		{
 			MethodName: "AddMetadata",
 			Handler:    _NexusStore_AddMetadata_Handler,
+		},
+		{
+			MethodName: "UpdateMetadata",
+			Handler:    _NexusStore_UpdateMetadata_Handler,
 		},
 		{
 			MethodName: "List",
