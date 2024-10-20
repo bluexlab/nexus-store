@@ -510,16 +510,16 @@ func TestList(t *testing.T) {
 		)
 
 		// Insert test data
-		document1 := fixture.InsertDocument(t, ctx, querier, bundle.dbPool, `{"test": "content1"}`)
-		document2 := fixture.InsertDocument(t, ctx, querier, bundle.dbPool, `{"test": "content2"}`)
-		s3Object1 := fixture.InsertS3Object(t, ctx, querier, bundle.dbPool)
-		s3Object2 := fixture.InsertS3Object(t, ctx, querier, bundle.dbPool)
+		document1 := fixture.InsertDocumentWithId(t, ctx, querier, bundle.dbPool, "11111111-a176-48e8-8cea-0c8e6dee4de2", `{"test": "content1"}`)
+		document2 := fixture.InsertDocumentWithId(t, ctx, querier, bundle.dbPool, "22222222-a176-48e8-8cea-0c8e6dee4de2", `{"test": "content2"}`)
+		s3Object1 := fixture.InsertS3ObjectWithId(t, ctx, querier, bundle.dbPool, "33333333-a176-48e8-8cea-0c8e6dee4de2")
+		s3Object2 := fixture.InsertS3ObjectWithId(t, ctx, querier, bundle.dbPool, "44444444-a176-48e8-8cea-0c8e6dee4de2")
 
 		// Insert metadata for documents and objects
 		fixture.InsertMetadata(t, ctx, querier, bundle.dbPool, &dbsqlc.MetadataInsertBatchParams{
 			ID:     document1.ID,
-			Keys:   []string{"Source", "Purpose"},
-			Values: []string{"System1", "Purpose1"},
+			Keys:   []string{"Source", "Purpose", "Unique"},
+			Values: []string{"System1", "Purpose1", "true"},
 		})
 
 		// Insert metadata for document2
@@ -616,7 +616,7 @@ func TestList(t *testing.T) {
 			},
 		}
 
-		resp, err := bundle.server.List(ctx, &pb.ListRequest{Filter: filter, IncludeDocuments: true, IncludeMetadata: true})
+		resp, err := bundle.server.List(ctx, &pb.ListRequest{Filter: filter, ReturnDocumentContent: true, ReturnMetadata: true})
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Nil(t, resp.Error)
@@ -630,7 +630,7 @@ func TestList(t *testing.T) {
 		obj1ID, _ := util.PgtypeUUIDToString(oids[2])
 		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Key }), doc1ID)
 		require.Contains(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Key }), obj1ID)
-		require.Equal(t, resp.Documents[0].Metadata, map[string]string{"Source": "System1", "Purpose": "Purpose1"})
+		require.Equal(t, resp.Documents[0].Metadata, map[string]string{"Source": "System1", "Purpose": "Purpose1", "Unique": "true"})
 		require.Equal(t, resp.Documents[0].Data, `{"test": "content1"}`)
 		require.Equal(t, resp.Files[0].Metadata, map[string]string{"Source": "System1", "Purpose": "Purpose1"})
 		require.Empty(t, resp.Files[0].Data)
@@ -744,6 +744,40 @@ func TestList(t *testing.T) {
 		require.Contains(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Key }), obj1ID)
 	})
 
+	t.Run("List documents and objects with AND and HAS_KEYS filter", func(t *testing.T) {
+		bundle, oids := setup(t)
+		filter := &pb.ListFilter{
+			Type: pb.ListFilter_AND_GROUP,
+			SubFilters: []*pb.ListFilter{
+				{
+					Type: pb.ListFilter_HAS_KEYS,
+					Entries: map[string]string{
+						"Unique": "",
+					},
+				},
+				{
+					Type: pb.ListFilter_EQUAL,
+					Entries: map[string]string{
+						"Purpose": "Purpose1",
+					},
+				},
+			},
+		}
+
+		resp, err := bundle.server.List(ctx, &pb.ListRequest{Filter: filter})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Nil(t, resp.Error)
+
+		// Check that we got the correct number of results
+		require.Len(t, resp.Documents, 1)
+		require.Len(t, resp.Files, 0)
+
+		// Check that we got the correct document and object
+		doc1ID, _ := util.PgtypeUUIDToString(oids[0])
+		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Key }), doc1ID)
+	})
+
 	t.Run("List documents and objects with nested AND and OR filter", func(t *testing.T) {
 		bundle, oids := setup(t)
 		filter := &pb.ListFilter{
@@ -801,6 +835,46 @@ func TestList(t *testing.T) {
 		obj2ID, _ := util.PgtypeUUIDToString(oids[3])
 		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Key }), doc1ID)
 		require.ElementsMatch(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Key }), []string{obj1ID, obj2ID})
+	})
+
+	t.Run("List documents and objects with inclusion and exclusion filters", func(t *testing.T) {
+		bundle, oids := setup(t)
+		filter := &pb.ListFilter{
+			Type: pb.ListFilter_OR_GROUP,
+			SubFilters: []*pb.ListFilter{
+				{
+					Type:    pb.ListFilter_EQUAL,
+					Entries: map[string]string{"Purpose": "Purpose1"},
+				},
+				{
+					Type:    pb.ListFilter_EQUAL,
+					Entries: map[string]string{"Purpose": "Purpose2"},
+				},
+			},
+		}
+		exclusionFilter := &pb.ListFilter{
+			Type: pb.ListFilter_HAS_KEYS,
+			Entries: map[string]string{
+				"Unique": "",
+			},
+		}
+
+		resp, err := bundle.server.List(ctx, &pb.ListRequest{Filter: filter, ExclusionFilter: exclusionFilter})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Nil(t, resp.Error)
+
+		// Check that we got the correct number of results
+		require.Len(t, resp.Documents, 1)
+		require.Len(t, resp.Files, 2)
+
+		// Check that we got the correct document and object
+		doc2ID, _ := util.PgtypeUUIDToString(oids[1])
+		obj1ID, _ := util.PgtypeUUIDToString(oids[2])
+		obj2ID, _ := util.PgtypeUUIDToString(oids[3])
+		require.Contains(t, lo.Map(resp.Documents, func(item *pb.ListItem, _ int) string { return item.Key }), doc2ID)
+		require.Contains(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Key }), obj1ID)
+		require.Contains(t, lo.Map(resp.Files, func(item *pb.ListItem, _ int) string { return item.Key }), obj2ID)
 	})
 
 	t.Run("List with invalid filter", func(t *testing.T) {

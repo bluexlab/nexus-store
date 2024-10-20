@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
-	"regexp"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/jackc/pgx/v5"
@@ -257,19 +255,12 @@ func (s *_NexusStoreServer) List(ctx context.Context, req *pb.ListRequest) (*pb.
 		return nil, status.Errorf(codes.InvalidArgument, "Request is required")
 	}
 
-	filter, err := model.CreateListFilter(req.GetFilter())
+	query, args, err := model.BuildListQuery(req.GetFilter(), req.GetExclusionFilter())
 	if err != nil {
 		return reportListError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "fails to create list filter", err), nil
 	}
+	slog.Info("List() query", "query", query, "whereArgs", args)
 
-	builder, err := filter.SqlQuery()
-	if err != nil {
-		return reportListError(nexus.Error_NEXUS_STORE_INVALID_PARAMETER, "fails to create list filter", err), nil
-	}
-	query := buildQuery(builder)
-	slog.Info("List() query", "query", query, "whereArgs", builder.WhereArgs, "havingArgs", builder.HavingArgs)
-
-	args := append(builder.WhereArgs, builder.HavingArgs...)
 	rows, err := s.dataSource.Query(ctx, query, args...)
 	if err != nil {
 		return reportListError(nexus.Error_NEXUS_STORE_QUERY_FAILED, "fails to execute query", err), nil
@@ -279,12 +270,12 @@ func (s *_NexusStoreServer) List(ctx context.Context, req *pb.ListRequest) (*pb.
 	documentIds, objectIds := scanRows(rows)
 	slog.Debug("List() documentIds", "documentIds", documentIds, "objectIds", objectIds)
 
-	documents, errResp := processDocuments(ctx, s.dataSource, documentIds, req.GetIncludeDocuments(), req.GetIncludeMetadata())
+	documents, errResp := processDocuments(ctx, s.dataSource, documentIds, req.GetReturnDocumentContent(), req.GetReturnMetadata())
 	if errResp != nil {
 		return errResp, nil
 	}
 
-	files, errResp := processFiles(ctx, s.dataSource, objectIds, req.GetIncludeMetadata())
+	files, errResp := processFiles(ctx, s.dataSource, objectIds, req.GetReturnMetadata())
 	if errResp != nil {
 		return errResp, nil
 	}
@@ -393,22 +384,6 @@ func processFiles(
 	}
 
 	return files, nil
-}
-
-func buildQuery(builder *model.SqlQueryBuilder) string {
-	sqlQuery := fmt.Sprintf(
-		"SELECT object_id, document_id FROM metadatas WHERE %s GROUP BY object_id, document_id HAVING %s;",
-		builder.WhereClause,
-		builder.HavingClause,
-	)
-
-	paramCount := 1
-	sqlQuery = regexp.MustCompile(`\?`).ReplaceAllStringFunc(sqlQuery, func(string) string {
-		placeholder := fmt.Sprintf("$%d", paramCount)
-		paramCount++
-		return placeholder
-	})
-	return sqlQuery
 }
 
 func scanRows(rows pgx.Rows) ([]pgtype.UUID, []pgtype.UUID) {

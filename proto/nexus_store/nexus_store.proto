@@ -185,8 +185,9 @@ message UpdateDocumentResponse {
 
 message ListRequest {
   ListFilter filter = 1;
-  bool include_metadata = 10;
-  bool include_documents = 11;
+  ListFilter exclusion_filter = 2;
+  bool return_metadata = 10;
+  bool return_document_content = 11;
 }
 
 message ListItem {
@@ -211,7 +212,6 @@ message ListFilter {
     HAS_KEYS = 4;
     OR_GROUP = 20;
     AND_GROUP = 21;
-    NOT = 22;
   }
 
   // which kind of Filter.
