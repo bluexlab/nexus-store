@@ -14,8 +14,8 @@ include:
 
 variables:
   DOCKER_DRIVER: overlay2
-  REPOSITORY_NAME: next-store
-  MASTER_REPO_NAMESPACE: "navyx/nexus/next-store"
+  REPOSITORY_NAME: nexus-store
+  MASTER_REPO_NAMESPACE: "navyx/nexus/nexus-store"
 
 workflow:
   rules:
