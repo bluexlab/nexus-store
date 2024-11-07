@@ -1,17 +1,76 @@
 syntax = "proto3";
 
-option go_package = "bluex_payment";
+import "google/api/annotations.proto";
+
+option go_package = "nexus_store";
 
 service NexusStore {
   // API for unstructure data
-  rpc GetDownloadURL(GetDownloadURLRequest) returns (GetDownloadURLResponse) {}
-  rpc UploadFile(UploadFileRequest) returns (UploadFileResponse) {}
-  rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse) {}
-  rpc TagAutoExpire(TagAutoExpireRequest) returns (TagAutoExpireResponse) {}
-  rpc UntagAutoExpire(UntagAutoExpireRequest) returns (UntagAutoExpireResponse) {}  
+  rpc GetDownloadURL(GetDownloadURLRequest) returns (GetDownloadURLResponse) {
+    option (google.api.http) = {
+      get: "/v1/store/get-download-url"
+    };
+  }
+  rpc AddFile(AddFileRequest) returns (AddFileResponse) {
+    option (google.api.http) = {
+      post: "/v1/store/add-file"
+      body: "*"
+    };
+  }
+  rpc RemoveFile(RemoveFileRequest) returns (RemoveFileResponse) {
+    option (google.api.http) = {
+      delete: "/v1/store/remove-file"
+    };
+  }
+  rpc TagAutoExpire(TagAutoExpireRequest) returns (TagAutoExpireResponse) {
+    option (google.api.http) = {
+      post: "/v1/store/tag-auto-expire"
+      body: "*"
+    };
+  }
+  rpc UntagAutoExpire(UntagAutoExpireRequest) returns (UntagAutoExpireResponse) {
+    option (google.api.http) = {
+      post: "/v1/store/untag-auto-expire"
+      body: "*"
+    };
+  }
+
+  // API for semi-structure data
+  rpc AddDocument(AddDocumentRequest) returns (AddDocumentResponse) {
+    option (google.api.http) = {
+      post: "/v1/store/add-document"
+      body: "*"
+    };
+  }
+
+  rpc UpdateDocument(UpdateDocumentRequest) returns (UpdateDocumentResponse) {
+    option (google.api.http) = {
+      post: "/v1/store/update-document"
+      body: "*"
+    };
+  }
 
   // API for both unstructure and semi-structure data
-  rpc AddMetadata(AddMetadataRequest) returns (AddMetadataResponse) {}
+  rpc AddMetadata(AddMetadataRequest) returns (AddMetadataResponse) {
+    option (google.api.http) = {
+      post: "/v1/store/add-metadata"
+      body: "*"
+    };
+  }
+
+  rpc UpdateMetadata(UpdateMetadataRequest) returns (UpdateMetadataResponse) {
+    option (google.api.http) = {
+      post: "/v1/store/update-metadata"
+      body: "*"
+    };
+  }
+
+  rpc List(ListRequest) returns (ListResponse) {
+    option (google.api.http) = {
+      post: "/v1/store/list"
+      body: "*"
+    };
+  }
 }
 
 message Error {
@@ -26,7 +85,12 @@ message Error {
     NEXUS_STORE_INVALID_PARAMETER  = 1101001001;
     NEXUS_STORE_EXCEED_SIZE_LIMIT  = 1101001002;
     NEXUS_STORE_KEY_NOT_EXIST      = 1101001003;
+    NEXUS_STORE_INTERNAL_ERROR     = 1101001004;
+    NEXUS_STORE_QUERY_FAILED      = 1101001005;
   }
+
+  ErrorCode code = 1;
+  string message = 2;
 }
 
 message MetadataEntry {
@@ -45,23 +109,23 @@ message GetDownloadURLResponse {
   string url = 2;
 }
 
-message UploadFileRequest {
+message AddFileRequest {
   string file_name = 1;
   bytes data = 2;
   bool auto_expire = 3;
-  repeated MetadataEntry metadata = 4;
+  map<string, string> metadata = 4;
 }
 
-message UploadFileResponse {
+message AddFileResponse {
   Error error = 1;
   string key = 2;
 }
 
-message DeleteFileRequest {
+message RemoveFileRequest {
   string key = 1;
 }
 
-message DeleteFileResponse {
+message RemoveFileResponse {
   Error error = 1;
   string key = 2;
 }
@@ -74,11 +138,88 @@ message TagAutoExpireResponse {
   Error error = 1;
 }
 
+message UntagAutoExpireRequest {
+  string key = 1;
+}
+
+message UntagAutoExpireResponse {
+  Error error = 1;
+}
+
 message AddMetadataRequest {
   string key = 1;
-  repeated MetadataEntry new_metadata = 2;
+  map<string, string> metadata = 2; // Other attributes in key-value pairs.
 }
 
 message AddMetadataResponse {
   Error error = 1;
+}
+
+message UpdateMetadataRequest {
+  string key = 1;
+  map<string, string> metadata = 2; // Other attributes in key-value pairs.
+}
+
+message UpdateMetadataResponse {
+  Error error = 1;
+}
+
+message AddDocumentRequest {
+  string data = 1; // Arbitrary data in valid JSON format
+  map<string, string> metadata = 2;
+}
+
+message AddDocumentResponse {
+  Error error = 1;
+  string key = 2;
+}
+
+message UpdateDocumentRequest {
+  string key = 1;
+  string data = 2; // Arbitrary data in valid JSON format
+}
+
+message UpdateDocumentResponse {
+  Error error = 1;
+}
+
+message ListRequest {
+  ListFilter filter = 1;
+  ListFilter exclusion_filter = 2;
+  bool return_metadata = 10;
+  bool return_document_content = 11;
+}
+
+message ListItem {
+  string key = 1;
+  int64 created_at = 2;
+  map<string, string> metadata = 3;
+  string data = 4;
+}
+
+message ListResponse {
+  Error error = 1;
+  repeated ListItem documents = 2;
+  repeated ListItem files = 3;
+}
+
+message ListFilter {
+  enum Type {
+    UNKNOWN = 0;
+    EQUAL = 1;
+    NOT_EQUAL = 2;
+    CONTAINS = 3;
+    HAS_KEYS = 4;
+    OR_GROUP = 20;
+    AND_GROUP = 21;
+  }
+
+  // which kind of Filter.
+  Type type = 1;
+
+  // sub filters, it's only used in OR_GROUP and AND_GROUP.
+  repeated ListFilter sub_filters = 2;
+
+  // metadata entries, it's only used in METADATA_EQUAL, METADATA_NOT_EQUAL, METADATA_CONTAINS, METADATA_NOT_CONTAINS, METADATA_REGEX.
+  map<string, string> entries = 3;
 }

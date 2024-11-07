@@ -1,0 +1,10 @@
+DROP INDEX IF EXISTS users_email;
+
+ALTER TABLE users
+DROP CONSTRAINT IF EXISTS email_valid;
+
+ALTER TABLE users
+DROP CONSTRAINT IF EXISTS email_not_null;
+
+ALTER TABLE users
+DROP COLUMN IF EXISTS email;
